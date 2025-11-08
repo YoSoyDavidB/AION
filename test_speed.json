@@ -1,0 +1,6 @@
+{
+  "user_id": "david",
+  "message": "Cuéntame sobre las tecnologías que estamos usando en el proyecto AION",
+  "use_memory": true,
+  "use_knowledge_base": true
+}

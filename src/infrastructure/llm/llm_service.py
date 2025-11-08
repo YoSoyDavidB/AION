@@ -2,12 +2,16 @@
 LLM service - High-level interface for language model operations.
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from src.config.settings import get_settings
+from src.domain.entities.tool import ToolCall
 from src.infrastructure.llm.openrouter_client import OpenRouterClient
 from src.shared.exceptions import LLMServiceError
 from src.shared.logging import LoggerMixin
+
+if TYPE_CHECKING:
+    from src.infrastructure.tools.tool_registry import ToolRegistry
 
 
 class LLMService(LoggerMixin):
@@ -21,16 +25,24 @@ class LLMService(LoggerMixin):
     - Question answering
     """
 
-    def __init__(self, client: OpenRouterClient | None = None) -> None:
+    def __init__(
+        self,
+        client: OpenRouterClient | None = None,
+        tool_registry: "ToolRegistry | None" = None,
+    ) -> None:
         """
         Initialize LLM service.
 
         Args:
             client: OpenRouter client instance (optional, will create if not provided)
+            tool_registry: Tool registry for function calling (optional)
         """
         self.settings = get_settings()
         self.client = client or OpenRouterClient()
+        self.tool_registry = tool_registry
         self.default_model = self.settings.openrouter.openrouter_llm_model
+        # Use faster, cheaper model for extractions
+        self.extraction_model = "anthropic/claude-3-haiku"
 
     async def close(self) -> None:
         """Close the underlying client."""
@@ -130,7 +142,9 @@ If no significant memories are found, return an empty array: []"""
             {"role": "user", "content": user_prompt},
         ]
 
-        response = await self.chat(messages, temperature=0.3, max_tokens=1000)
+        response = await self.chat(
+            messages, model=self.extraction_model, temperature=0.3, max_tokens=1000
+        )
 
         # Parse JSON response
         try:
@@ -366,7 +380,9 @@ If no significant entities are found, return an empty array: []"""
             {"role": "user", "content": user_prompt},
         ]
 
-        response = await self.chat(messages, temperature=0.2, max_tokens=2000)
+        response = await self.chat(
+            messages, model=self.extraction_model, temperature=0.2, max_tokens=2000
+        )
 
         # Parse JSON response
         try:
@@ -455,7 +471,9 @@ Text to analyze:
             {"role": "user", "content": user_prompt},
         ]
 
-        response = await self.chat(messages, temperature=0.2, max_tokens=2000)
+        response = await self.chat(
+            messages, model=self.extraction_model, temperature=0.2, max_tokens=2000
+        )
 
         # Parse JSON response
         try:
@@ -473,3 +491,174 @@ Text to analyze:
                 "Failed to parse relationship extraction response",
                 details={"error": str(e), "response": response[:500]},
             ) from e
+
+    async def chat_with_tools(
+        self,
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int | None = None,
+        max_iterations: int = 5,
+    ) -> dict[str, Any]:
+        """
+        Chat with tool calling support (agentic loop).
+
+        This method implements the full tool calling loop:
+        1. Send request with tools
+        2. If model requests tools, execute them
+        3. Send results back
+        4. Repeat until model responds with text (finish_reason: "stop")
+
+        Args:
+            messages: List of message dictionaries
+            model: Model to use (defaults to configured model)
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            max_iterations: Maximum iterations in the agentic loop (default: 5)
+
+        Returns:
+            Final response with tool call history
+
+        Raises:
+            LLMServiceError: If tool calling fails
+            ValueError: If tool registry is not configured
+        """
+        if self.tool_registry is None:
+            raise ValueError("Tool registry is not configured for this LLM service")
+
+        model = model or self.default_model
+
+        self.logger.info(
+            "chat_with_tools_starting",
+            model=model,
+            num_messages=len(messages),
+            max_iterations=max_iterations,
+        )
+
+        # Get tool definitions
+        tools = self.tool_registry.get_tools_definitions()
+
+        if not tools:
+            # No tools available, fall back to regular chat
+            self.logger.warning("no_tools_available_falling_back_to_regular_chat")
+            return await self.client.generate_completion(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+        # Agentic loop
+        conversation_messages = messages.copy()
+        tool_calls_history = []
+        iteration = 0
+
+        while iteration < max_iterations:
+            iteration += 1
+
+            self.logger.info(
+                "tool_calling_iteration",
+                iteration=iteration,
+                num_messages=len(conversation_messages),
+            )
+
+            # Send request with tools
+            response = await self.client.generate_completion(
+                model=model,
+                messages=conversation_messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=tools,
+                tool_choice="auto",
+            )
+
+            # Get response message
+            response_message = response["choices"][0]["message"]
+            finish_reason = response["choices"][0]["finish_reason"]
+
+            # Check if model wants to call tools
+            if finish_reason == "tool_calls" and response_message.get("tool_calls"):
+                tool_calls_data = response_message["tool_calls"]
+
+                self.logger.info(
+                    "model_requested_tools", num_tools=len(tool_calls_data)
+                )
+
+                # Add assistant message with tool calls to conversation
+                conversation_messages.append(response_message)
+
+                # Parse tool calls
+                tool_calls = []
+                for tc in tool_calls_data:
+                    import json
+
+                    tool_calls.append(
+                        ToolCall(
+                            tool_call_id=tc["id"],
+                            tool_name=tc["function"]["name"],
+                            arguments=json.loads(tc["function"]["arguments"]),
+                        )
+                    )
+
+                # Execute tools
+                tool_results = await self.tool_registry.execute_multiple_tool_calls(
+                    tool_calls
+                )
+
+                # Add to history
+                tool_calls_history.extend(
+                    [
+                        {
+                            "tool_name": tr.tool_name,
+                            "arguments": tc.arguments,
+                            "result": tr.result,
+                            "success": tr.success,
+                            "error": tr.error,
+                        }
+                        for tc, tr in zip(tool_calls, tool_results)
+                    ]
+                )
+
+                # Add tool results to conversation
+                for tool_result in tool_results:
+                    conversation_messages.append(tool_result.to_message_format())
+
+                # Continue loop to get next response
+                continue
+
+            else:
+                # Model responded with text, exit loop
+                self.logger.info(
+                    "tool_calling_completed",
+                    iterations=iteration,
+                    num_tool_calls=len(tool_calls_history),
+                    finish_reason=finish_reason,
+                )
+
+                # Add tool call history to response
+                response["tool_calls_history"] = tool_calls_history
+                response["iterations"] = iteration
+
+                return response
+
+        # Max iterations reached
+        self.logger.warning(
+            "tool_calling_max_iterations_reached",
+            max_iterations=max_iterations,
+            num_tool_calls=len(tool_calls_history),
+        )
+
+        # Return last response even if max iterations reached
+        return {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "Maximum tool calling iterations reached. Please try simplifying your request.",
+                    },
+                    "finish_reason": "max_iterations",
+                }
+            ],
+            "tool_calls_history": tool_calls_history,
+            "iterations": iteration,
+        }

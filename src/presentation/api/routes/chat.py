@@ -4,7 +4,7 @@ Chat conversation endpoints.
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from src.application.dtos.chat_dto import ChatRequest, ChatResponse
 from src.application.use_cases.chat_use_case import ChatUseCase
@@ -18,19 +18,21 @@ logger = get_logger(__name__)
 @router.post("/chat", response_model=ChatResponse, status_code=200)
 async def chat(
     request: ChatRequest,
+    background_tasks: BackgroundTasks,
     chat_use_case: ChatUseCase = Depends(get_chat_use_case),
 ):
     """
-    Send a message and receive a response from the AI assistant.
+    Send a message and receive a response from the AI assistant (FAST).
 
-    This endpoint orchestrates the entire conversation flow:
-    - Retrieves relevant context from memories and knowledge base
-    - Generates contextual response using RAG
-    - Extracts and stores new memories
-    - Updates conversation history
+    This endpoint uses background processing for optimal performance:
+    - Generates quick response using RAG (~4 seconds)
+    - Extracts memories and entities in background (async)
+
+    The response is returned immediately while extractions continue.
 
     Args:
         request: Chat request with user message and parameters
+        background_tasks: FastAPI background tasks
         chat_use_case: Injected chat use case
 
     Returns:
@@ -46,12 +48,20 @@ async def chat(
             conversation_id=str(request.conversation_id) if request.conversation_id else None,
         )
 
-        response = await chat_use_case.execute(request)
+        # Execute quick response (without blocking extractions)
+        response = await chat_use_case.execute_quick(request)
+
+        # Schedule background extractions
+        background_tasks.add_task(
+            chat_use_case.extract_background_data,
+            conversation_id=str(response.conversation_id),
+            user_id=request.user_id,
+        )
 
         logger.info(
             "chat_response_sent",
             conversation_id=str(response.conversation_id),
-            new_memories=len(response.new_memories_created),
+            background_extraction=True,
         )
 
         return response

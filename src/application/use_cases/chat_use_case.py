@@ -51,7 +51,8 @@ class ChatUseCase(LoggerMixin):
 
     async def execute(self, request: ChatRequest) -> ChatResponse:
         """
-        Execute chat conversation.
+        Execute chat conversation (LEGACY - with blocking extractions).
+        Use execute_quick() + extract_background_data() for better performance.
 
         Args:
             request: Chat request with user message
@@ -146,6 +147,145 @@ class ChatUseCase(LoggerMixin):
             raise UseCaseExecutionError(
                 f"Chat execution failed: {str(e)}"
             ) from e
+
+    async def execute_quick(self, request: ChatRequest) -> ChatResponse:
+        """
+        Execute chat conversation with quick response (extractions in background).
+
+        Args:
+            request: Chat request with user message
+
+        Returns:
+            Chat response with assistant message (extractions pending)
+
+        Raises:
+            UseCaseExecutionError: If chat execution fails
+        """
+        try:
+            self.logger.info(
+                "executing_chat_quick",
+                user_id=request.user_id,
+                message=request.message[:50],
+            )
+
+            # Step 1: Get or create conversation
+            conversation = await self._get_or_create_conversation(request)
+
+            # Step 2: Add user message
+            conversation.add_message(MessageRole.USER, request.message)
+
+            # Step 3: Generate response using RAG
+            rag_request = RAGRequest(
+                query=request.message,
+                user_id=request.user_id,
+                include_memories=request.use_memory,
+                include_documents=request.use_knowledge_base,
+                max_memories=request.max_context_memories,
+                max_documents=request.max_context_documents,
+            )
+
+            rag_response = await self.rag_use_case.execute(rag_request)
+
+            # Step 4: Add assistant message
+            conversation.add_message(MessageRole.ASSISTANT, rag_response.answer)
+
+            # Step 5: Save conversation (extractions will be done in background)
+            await self.conversation_repo.update(conversation)
+
+            # Step 6: Build quick response
+            response = ChatResponse(
+                conversation_id=conversation.conversation_id,
+                message=rag_response.answer,
+                memories_used=[
+                    str(mem.memory_id) for mem in rag_response.context.memories
+                ],
+                documents_used=[
+                    doc["doc_id"] for doc in rag_response.context.documents
+                ],
+                new_memories_created=[],  # Will be populated in background
+                metadata={
+                    "context_tokens": rag_response.context.total_tokens,
+                    "confidence": rag_response.confidence,
+                    "sources": rag_response.sources,
+                    "entities_created": 0,  # Will be updated in background
+                    "relationships_created": 0,  # Will be updated in background
+                },
+            )
+
+            self.logger.info(
+                "chat_quick_response_completed",
+                conversation_id=str(conversation.conversation_id),
+            )
+
+            return response
+
+        except Exception as e:
+            self.logger.error("chat_quick_execution_failed", error=str(e))
+            raise UseCaseExecutionError(
+                f"Chat quick execution failed: {str(e)}"
+            ) from e
+
+    async def extract_background_data(
+        self, conversation_id: str, user_id: str
+    ) -> None:
+        """
+        Extract memories and entities in background after quick response.
+
+        Args:
+            conversation_id: Conversation ID
+            user_id: User ID
+        """
+        try:
+            self.logger.info(
+                "extracting_background_data",
+                conversation_id=conversation_id,
+                user_id=user_id,
+            )
+
+            # Get conversation
+            from uuid import UUID
+            conversation = await self.conversation_repo.get_by_id(UUID(conversation_id))
+            if not conversation:
+                self.logger.warning(
+                    "conversation_not_found_for_extraction",
+                    conversation_id=conversation_id,
+                )
+                return
+
+            conversation_text = self._get_conversation_text(conversation)
+
+            # Extract and store new memories
+            new_memories = await self._extract_memories(
+                conversation_text=conversation_text,
+                conversation_id=conversation_id,
+                user_id=user_id,
+            )
+
+            # Extract and store entities
+            await self._extract_entities(
+                conversation_text=conversation_text,
+                conversation_id=conversation_id,
+                user_id=user_id,
+            )
+
+            # Update conversation with extracted memories
+            for memory_id in new_memories:
+                conversation.add_extracted_memory(memory_id)
+
+            await self.conversation_repo.update(conversation)
+
+            self.logger.info(
+                "background_extraction_completed",
+                conversation_id=conversation_id,
+                new_memories=len(new_memories),
+            )
+
+        except Exception as e:
+            self.logger.error(
+                "background_extraction_failed",
+                conversation_id=conversation_id,
+                error=str(e),
+            )
 
     async def _get_or_create_conversation(
         self, request: ChatRequest

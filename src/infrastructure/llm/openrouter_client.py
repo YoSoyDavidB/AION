@@ -149,6 +149,8 @@ class OpenRouterClient(LoggerMixin):
         presence_penalty: float = 0.0,
         stop: list[str] | None = None,
         stream: bool = False,
+        tools: list[dict[str, Any]] | None = None,
+        tool_choice: str | dict[str, Any] = "auto",
     ) -> dict[str, Any]:
         """
         Generate a chat completion using OpenRouter.
@@ -163,6 +165,8 @@ class OpenRouterClient(LoggerMixin):
             presence_penalty: Presence penalty (-2 to 2)
             stop: Stop sequences
             stream: Whether to stream the response
+            tools: List of tool definitions for function calling
+            tool_choice: Tool choice strategy ("auto", "none", or specific tool)
 
         Returns:
             Completion response
@@ -176,6 +180,7 @@ class OpenRouterClient(LoggerMixin):
             num_messages=len(messages),
             temperature=temperature,
             max_tokens=max_tokens,
+            has_tools=tools is not None,
         )
 
         data: dict[str, Any] = {
@@ -194,12 +199,22 @@ class OpenRouterClient(LoggerMixin):
         if stop is not None:
             data["stop"] = stop
 
+        # Add tool calling parameters if tools are provided
+        if tools is not None and len(tools) > 0:
+            data["tools"] = tools
+            data["tool_choice"] = tool_choice
+            self.logger.info("tools_included", num_tools=len(tools))
+
         response = await self._make_request("/chat/completions", data=data)
 
         self.logger.info(
             "completion_generated",
             model=model,
             usage=response.get("usage", {}),
+            has_tool_calls=response.get("choices", [{}])[0]
+            .get("message", {})
+            .get("tool_calls")
+            is not None,
         )
 
         return response
