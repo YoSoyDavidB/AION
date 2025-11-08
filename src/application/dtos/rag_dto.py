@@ -25,6 +25,11 @@ class RAGRequest(BaseModel):
     user_id: str = Field(..., description="User identifier")
     include_memories: bool = Field(default=True, description="Include memory context")
     include_documents: bool = Field(default=True, description="Include document context")
+    use_tools: bool = Field(default=True, description="Enable function calling / tool use")
+    tool_choice: str | None = Field(
+        default=None,
+        description="Tool choice: 'auto' (default), 'none', or specific tool name",
+    )
     max_memories: int = Field(default=5, ge=0, le=20, description="Max memories")
     max_documents: int = Field(default=10, ge=0, le=50, description="Max documents")
     system_prompt: str | None = Field(default=None, description="Custom system prompt")
@@ -39,3 +44,7 @@ class RAGResponse(BaseModel):
         default=0.0, ge=0.0, le=1.0, description="Confidence score"
     )
     sources: list[str] = Field(default_factory=list, description="Source citations")
+    tools_used: list[dict] = Field(
+        default_factory=list,
+        description="Tools/functions called during answer generation",
+    )

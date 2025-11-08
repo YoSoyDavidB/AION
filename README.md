@@ -8,6 +8,12 @@ AION is an intelligent personal assistant that maintains long-term memory across
 - **Obsidian Integration**: Seamlessly syncs and searches your Obsidian vault from GitHub
 - **Semantic Search**: RAG pipeline for intelligent context retrieval
 - **Entity Relationships**: Knowledge graph using Neo4j for advanced reasoning
+- **Function Calling / Tool Use**: LLM can use external tools for enhanced capabilities
+  - **Web Search**: Search the internet using DuckDuckGo
+  - **Code Executor**: Run Python code in a sandboxed environment
+  - **Calculator**: Perform complex mathematical calculations
+  - **Knowledge Base Search**: Query memories and documents
+- **Manual Tool Control**: Force specific tools or disable them entirely
 - **Multi-Agent Architecture**: Specialized agents for memory, retrieval, and synchronization
 - **Privacy-First**: All data encrypted at rest, complete user control
 
@@ -26,13 +32,14 @@ src/
 
 ### Tech Stack
 
-- **Backend**: FastAPI + LangChain
+- **Backend**: FastAPI + Python
 - **Vector Store**: Qdrant
 - **Graph Database**: Neo4j
 - **Relational DB**: PostgreSQL
-- **LLM Provider**: OpenRouter
+- **LLM Provider**: OpenRouter (Claude 3.5 Sonnet)
 - **Embeddings**: OpenRouter (configurable models)
-- **Orchestration**: Python + LangChain
+- **Function Calling**: Native OpenRouter API integration
+- **Web Search**: DuckDuckGo (no API key required)
 
 ## Quick Start
 
@@ -98,7 +105,7 @@ AION/
 ├── src/
 │   ├── config/              # Application configuration
 │   ├── domain/              # Business entities and interfaces
-│   │   ├── entities/        # Memory, Document, Conversation
+│   │   ├── entities/        # Memory, Document, Conversation, Tool
 │   │   ├── repositories/    # Repository interfaces
 │   │   └── services/        # Domain services
 │   ├── application/         # Use cases
@@ -109,6 +116,11 @@ AION/
 │   │   ├── graph_db/        # Neo4j implementation
 │   │   ├── llm/             # OpenRouter LLM client
 │   │   ├── embeddings/      # Embedding service
+│   │   ├── tools/           # Function calling tools
+│   │   │   ├── calculator_tool.py
+│   │   │   ├── web_search_tool.py
+│   │   │   ├── code_executor_tool.py
+│   │   │   └── knowledge_base_tool.py
 │   │   └── github_sync/     # Obsidian vault sync
 │   ├── presentation/        # API layer
 │   │   ├── api/             # FastAPI routes
@@ -175,6 +187,130 @@ Once the server is running, visit:
 - `POST /api/v1/sync` - Trigger Obsidian vault sync
 - `GET /api/v1/search` - Search knowledge base
 
+## Function Calling & Tools
+
+AION supports **function calling** (also known as tool use), allowing the LLM to invoke external tools to enhance its capabilities. The system implements an **agentic loop** where the LLM can:
+
+1. Analyze the user's request
+2. Decide which tools to use
+3. Execute tools and receive results
+4. Use the results to formulate a comprehensive answer
+
+### Available Tools
+
+#### 1. Calculator Tool
+Performs complex mathematical calculations using Python's `eval()` in a safe context.
+
+**Use cases:**
+- Mathematical operations
+- Complex formulas
+- Unit conversions
+
+**Example:**
+```python
+# User: "What is 156 * 78 + 234?"
+# Tool executes: 156 * 78 + 234
+# Result: 12,402
+```
+
+#### 2. Web Search Tool
+Searches the internet using DuckDuckGo (no API key required).
+
+**Use cases:**
+- Current events and news
+- Real-time information
+- General web searches
+- Fact verification
+
+**Parameters:**
+- `query`: Search query
+- `max_results`: Number of results (default: 5, max: 10)
+
+**Example:**
+```python
+# User: "What's the latest news about AI?"
+# Tool searches DuckDuckGo and returns top 5 results
+```
+
+#### 3. Code Executor Tool
+Executes Python code in a secure sandboxed environment.
+
+**Security features:**
+- 10-second timeout
+- Restricted imports (math, datetime, json, re, collections, itertools)
+- No file system access
+- No network access
+- Captures stdout/stderr
+
+**Use cases:**
+- Data transformations
+- Algorithm execution
+- Sequence generation
+- Complex calculations
+
+**Example:**
+```python
+# User: "Generate the first 10 Fibonacci numbers"
+# Tool executes Python code and returns: [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
+```
+
+#### 4. Knowledge Base Search Tool
+Searches the user's personal knowledge base (memories and documents).
+
+**Use cases:**
+- Retrieving stored memories
+- Searching uploaded documents
+- Finding relevant context from past conversations
+
+### Tool Choice Modes
+
+You can control how tools are used through the `tool_choice` parameter:
+
+```python
+# Auto mode - LLM decides when to use tools (default)
+{
+  "message": "What is 25 + 17?",
+  "use_tools": true,
+  "tool_choice": "auto"
+}
+
+# Force specific tool
+{
+  "message": "What is 25 + 17?",
+  "use_tools": true,
+  "tool_choice": "calculator"
+}
+
+# Disable all tools
+{
+  "message": "What is 25 + 17?",
+  "use_tools": true,
+  "tool_choice": "none"
+}
+```
+
+### Tool Response Format
+
+When tools are used, the response includes metadata about tool execution:
+
+```json
+{
+  "conversation_id": "uuid",
+  "message": "The result is 12,402",
+  "tools_used": [
+    {
+      "name": "calculator",
+      "arguments": {"expression": "156 * 78 + 234"},
+      "result": 12402
+    }
+  ],
+  "metadata": {
+    "context_tokens": 150,
+    "confidence": 0.95
+  }
+}
+```
+
 ## Agents
 
 ### Memory Agent
@@ -187,7 +323,7 @@ Performs semantic search across memories and documents.
 Synchronizes and indexes Obsidian vault from GitHub.
 
 ### Conversation Agent
-Main orchestrator that coordinates other agents.
+Main orchestrator that coordinates other agents and tool usage.
 
 ## Database Schema
 
@@ -231,10 +367,11 @@ For issues, questions, or contributions, please open an issue on GitHub.
 
 ## Acknowledgments
 
-- Built with FastAPI and LangChain
-- Powered by OpenRouter for flexible LLM access
+- Built with FastAPI
+- Powered by OpenRouter for flexible LLM access (Claude 3.5 Sonnet)
 - Vector storage by Qdrant
 - Graph database by Neo4j
+- Web search powered by DuckDuckGo
 
 ---
 

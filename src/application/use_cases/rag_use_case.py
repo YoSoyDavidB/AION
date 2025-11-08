@@ -60,8 +60,8 @@ class RAGUseCase(LoggerMixin):
             # Step 1: Retrieve context
             context = await self._retrieve_context(request)
 
-            # Step 2: Generate answer
-            answer = await self._generate_answer(request, context)
+            # Step 2: Generate answer (with optional tool use)
+            answer, tools_used = await self._generate_answer(request, context)
 
             # Step 3: Extract sources
             sources = self._extract_sources(context)
@@ -71,12 +71,14 @@ class RAGUseCase(LoggerMixin):
                 context=context,
                 confidence=0.85,  # TODO: Implement confidence scoring
                 sources=sources,
+                tools_used=tools_used,
             )
 
             self.logger.info(
                 "rag_pipeline_completed",
                 answer_length=len(answer),
                 num_sources=len(sources),
+                tools_used=len(tools_used),
             )
 
             return response
@@ -298,7 +300,7 @@ class RAGUseCase(LoggerMixin):
 
     async def _generate_answer(
         self, request: RAGRequest, context: RAGContext
-    ) -> str:
+    ) -> tuple[str, list[dict]]:
         """
         Generate answer using LLM with retrieved context.
 
@@ -307,15 +309,46 @@ class RAGUseCase(LoggerMixin):
             context: Retrieved context
 
         Returns:
-            Generated answer
+            Tuple of (answer, tools_used)
         """
-        answer = await self.llm_service.answer_with_context(
-            question=request.query,
-            context=context.context_text,
-            system_prompt=request.system_prompt,
-        )
+        # Check if tools are enabled and available
+        if request.use_tools and hasattr(self.llm_service, "tool_registry") and self.llm_service.tool_registry is not None:
+            # Use tool-enabled chat
+            system_prompt = request.system_prompt or """You are AION, an intelligent personal assistant with access to the user's knowledge base and conversation history.
 
-        return answer
+Use the provided context to answer the user's question accurately and concisely. If the context doesn't contain relevant information, say so honestly.
+
+Always cite sources when referencing specific information from the context.
+
+You have access to tools that can help you answer questions better. Use them when appropriate:
+- calculator: For mathematical calculations
+- knowledge_base_search: To search for additional information in the user's knowledge base"""
+
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Context:\n{context.context_text}\n\nQuestion: {request.query}"},
+            ]
+
+            # Determine tool_choice value
+            tool_choice_value = request.tool_choice or "auto"
+
+            response = await self.llm_service.chat_with_tools(
+                messages, max_tokens=1000, tool_choice=tool_choice_value
+            )
+
+            answer = response["choices"][0]["message"]["content"]
+            tools_used = response.get("tool_calls_history", [])
+
+            return answer, tools_used
+        else:
+            # Use regular answer generation without tools
+            answer = await self.llm_service.answer_with_context(
+                question=request.query,
+                context=context.context_text,
+                system_prompt=request.system_prompt,
+            )
+
+            return answer, []
 
     def _extract_sources(self, context: RAGContext) -> list[str]:
         """

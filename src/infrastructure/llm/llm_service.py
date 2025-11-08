@@ -499,6 +499,7 @@ Text to analyze:
         temperature: float = 0.7,
         max_tokens: int | None = None,
         max_iterations: int = 5,
+        tool_choice: str | dict[str, Any] = "auto",
     ) -> dict[str, Any]:
         """
         Chat with tool calling support (agentic loop).
@@ -515,6 +516,11 @@ Text to analyze:
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
             max_iterations: Maximum iterations in the agentic loop (default: 5)
+            tool_choice: Tool selection strategy:
+                - "auto": Let model decide (default)
+                - "none": Disable tools
+                - "calculator": Force use of specific tool
+                - {"type": "function", "function": {"name": "calculator"}}: Force specific tool (OpenAI format)
 
         Returns:
             Final response with tool call history
@@ -563,14 +569,23 @@ Text to analyze:
             )
 
             # Send request with tools
-            response = await self.client.generate_completion(
-                model=model,
-                messages=conversation_messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                tools=tools,
-                tool_choice="auto",
-            )
+            # Handle tool_choice="none" by not sending tools at all
+            if tool_choice == "none":
+                response = await self.client.generate_completion(
+                    model=model,
+                    messages=conversation_messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            else:
+                response = await self.client.generate_completion(
+                    model=model,
+                    messages=conversation_messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                )
 
             # Get response message
             response_message = response["choices"][0]["message"]

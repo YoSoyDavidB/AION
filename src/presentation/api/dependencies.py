@@ -32,6 +32,13 @@ from src.infrastructure.vector_store.document_repository_impl import (
     QdrantDocumentRepository,
 )
 from src.infrastructure.vector_store.memory_repository_impl import QdrantMemoryRepository
+from src.infrastructure.tools import (
+    CalculatorTool,
+    CodeExecutorTool,
+    ToolRegistry,
+    WebSearchTool,
+)
+from src.infrastructure.tools.knowledge_base_tool import KnowledgeBaseTool
 
 
 # Infrastructure Singletons
@@ -44,10 +51,39 @@ def get_openrouter_client() -> OpenRouterClient:
 
 
 @lru_cache
+def get_tool_registry() -> ToolRegistry:
+    """Get or create tool registry singleton with all tools registered."""
+    registry = ToolRegistry()
+
+    # Register Calculator Tool
+    calculator = CalculatorTool()
+    registry.register(calculator)
+
+    # Register Web Search Tool
+    web_search = WebSearchTool()
+    registry.register(web_search)
+
+    # Register Code Executor Tool
+    code_executor = CodeExecutorTool()
+    registry.register(code_executor)
+
+    # Register Knowledge Base Tool
+    # Note: KnowledgeBaseTool needs dependencies, so we create it with use cases
+    kb_tool = KnowledgeBaseTool(
+        search_memories_use_case=get_search_memories_use_case(),
+        document_repo=get_document_repository(),
+    )
+    registry.register(kb_tool)
+
+    return registry
+
+
+@lru_cache
 def get_llm_service() -> LLMService:
     """Get or create LLM service singleton."""
     client = get_openrouter_client()
-    return LLMService(client=client)
+    tool_registry = get_tool_registry()
+    return LLMService(client=client, tool_registry=tool_registry)
 
 
 @lru_cache

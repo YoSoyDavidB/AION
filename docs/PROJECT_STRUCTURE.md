@@ -24,7 +24,8 @@ AION/
 │   │   │   ├── memory.py                  # Memory entity + types
 │   │   │   ├── document.py                # Document entity
 │   │   │   ├── conversation.py            # Conversation + Message entities
-│   │   │   └── graph_entity.py            # Graph entities + relationships
+│   │   │   ├── graph_entity.py            # Graph entities + relationships
+│   │   │   └── tool.py                    # Tool base class + parameters
 │   │   ├── repositories/                  # Repository interfaces
 │   │   │   ├── __init__.py
 │   │   │   ├── memory_repository.py
@@ -49,10 +50,17 @@ AION/
 │   │   ├── llm/                           # Language Model services
 │   │   │   ├── __init__.py
 │   │   │   ├── openrouter_client.py       # HTTP client for OpenRouter
-│   │   │   └── llm_service.py             # High-level LLM operations
+│   │   │   └── llm_service.py             # High-level LLM operations (with tool calling)
 │   │   ├── embeddings/                    # Embedding services
 │   │   │   ├── __init__.py
 │   │   │   └── embedding_service.py       # Text-to-vector conversion
+│   │   ├── tools/                         # Function calling tools
+│   │   │   ├── __init__.py
+│   │   │   ├── tool_registry.py           # Tool management
+│   │   │   ├── calculator_tool.py         # Mathematical calculations
+│   │   │   ├── web_search_tool.py         # DuckDuckGo web search
+│   │   │   ├── code_executor_tool.py      # Python code execution (sandboxed)
+│   │   │   └── knowledge_base_tool.py     # Memory & document search
 │   │   ├── vector_store/                  # Qdrant implementations
 │   │   │   ├── __init__.py
 │   │   │   ├── qdrant_client.py           # Qdrant wrapper
@@ -67,6 +75,9 @@ AION/
 │   │   │   ├── models.py                  # SQLAlchemy models
 │   │   │   ├── connection.py              # Session management
 │   │   │   └── conversation_repository_impl.py
+│   │   ├── document_processing/           # Document processing
+│   │   │   ├── __init__.py
+│   │   │   └── document_processor.py      # Text extraction & chunking
 │   │   └── github_sync/                   # GitHub sync (placeholder)
 │   │
 │   ├── presentation/                      # Presentation layer (API)
@@ -97,6 +108,7 @@ AION/
 ├── docs/                                  # Documentation
 │   ├── SETUP.md                           # Setup guide
 │   ├── ARCHITECTURE.md                    # Architecture documentation
+│   ├── TOOLS.md                           # Function calling & tools guide
 │   └── PROJECT_STRUCTURE.md               # This file
 │
 ├── logs/                                  # Application logs (gitignored)
@@ -157,8 +169,15 @@ AION/
 
 **LLM Services:**
 - `src/infrastructure/llm/openrouter_client.py` - OpenRouter HTTP client
-- `src/infrastructure/llm/llm_service.py` - LLM operations (chat, extraction, etc.)
+- `src/infrastructure/llm/llm_service.py` - LLM operations (chat, extraction, tool calling)
 - `src/infrastructure/embeddings/embedding_service.py` - Embedding generation
+
+**Function Calling Tools:**
+- `src/infrastructure/tools/tool_registry.py` - Tool management and registration
+- `src/infrastructure/tools/calculator_tool.py` - Mathematical calculations
+- `src/infrastructure/tools/web_search_tool.py` - DuckDuckGo web search
+- `src/infrastructure/tools/code_executor_tool.py` - Sandboxed Python execution
+- `src/infrastructure/tools/knowledge_base_tool.py` - Memory and document search
 
 ### Presentation Layer (API)
 - `src/main.py` - FastAPI app initialization

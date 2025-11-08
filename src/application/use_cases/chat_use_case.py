@@ -82,6 +82,8 @@ class ChatUseCase(LoggerMixin):
                 user_id=request.user_id,
                 include_memories=request.use_memory,
                 include_documents=request.use_knowledge_base,
+                use_tools=request.use_tools,
+                tool_choice=request.tool_choice,
                 max_memories=request.max_context_memories,
                 max_documents=request.max_context_documents,
             )
@@ -123,6 +125,7 @@ class ChatUseCase(LoggerMixin):
                     doc["doc_id"] for doc in rag_response.context.documents
                 ],
                 new_memories_created=[str(mem_id) for mem_id in new_memories],
+                tools_used=rag_response.tools_used,
                 metadata={
                     "context_tokens": rag_response.context.total_tokens,
                     "confidence": rag_response.confidence,
@@ -180,6 +183,8 @@ class ChatUseCase(LoggerMixin):
                 user_id=request.user_id,
                 include_memories=request.use_memory,
                 include_documents=request.use_knowledge_base,
+                use_tools=request.use_tools,
+                tool_choice=request.tool_choice,
                 max_memories=request.max_context_memories,
                 max_documents=request.max_context_documents,
             )
@@ -203,6 +208,7 @@ class ChatUseCase(LoggerMixin):
                     doc["doc_id"] for doc in rag_response.context.documents
                 ],
                 new_memories_created=[],  # Will be populated in background
+                tools_used=rag_response.tools_used,
                 metadata={
                     "context_tokens": rag_response.context.total_tokens,
                     "confidence": rag_response.confidence,

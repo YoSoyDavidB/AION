@@ -36,6 +36,7 @@ AION follows **Clean Architecture** principles with clear separation of concerns
 - `Document`: Knowledge base document chunks
 - `Conversation`: Chat conversation and messages
 - `GraphEntity`: Knowledge graph entities and relationships
+- `Tool`: Base class for function calling tools (BaseTool, ToolParameter)
 
 **Repository Interfaces:**
 - `IMemoryRepository`: Contract for memory storage
@@ -80,8 +81,15 @@ AION follows **Clean Architecture** principles with clear separation of concerns
 
 **LLM & Embeddings (OpenRouter):**
 - `OpenRouterClient`: HTTP client with retry logic
-- `LLMService`: High-level LLM operations
+- `LLMService`: High-level LLM operations (with function calling support)
 - `EmbeddingService`: Text-to-vector conversion
+
+**Function Calling Tools:**
+- `ToolRegistry`: Manages tool registration and execution
+- `CalculatorTool`: Mathematical calculations
+- `WebSearchTool`: DuckDuckGo web search (no API key required)
+- `CodeExecutorTool`: Sandboxed Python code execution
+- `KnowledgeBaseTool`: Search memories and documents
 
 #### 4. Presentation Layer (`src/presentation/`)
 **HTTP API and user interface**
@@ -101,21 +109,40 @@ AION follows **Clean Architecture** principles with clear separation of concerns
 #### Chat Request Flow
 
 ```
-1. User → POST /api/v1/chat
+1. User → POST /api/v1/chat (with use_tools=true)
 2. ChatRequest (DTO) validated
-3. ChatUseCase.execute()
+3. ChatUseCase.execute_quick()
    ├─→ Get/Create Conversation (PostgreSQL)
    ├─→ RAGUseCase.execute()
    │   ├─→ Generate query embedding (OpenRouter)
    │   ├─→ Search memories (Qdrant)
    │   ├─→ Search documents (Qdrant)
+   │   ├─→ Search knowledge graph (Neo4j)
    │   ├─→ Assemble context
-   │   └─→ Generate answer (OpenRouter LLM)
-   ├─→ Extract new memories (LLM)
-   ├─→ Store new memories (Qdrant)
-   └─→ Update conversation (PostgreSQL)
-4. ChatResponse (DTO) returned
+   │   └─→ LLMService.chat_with_tools() [Agentic Loop]
+   │       ├─→ Send request with tools (OpenRouter)
+   │       ├─→ If tool call requested:
+   │       │   ├─→ ToolRegistry.execute_tool()
+   │       │   ├─→ Return tool result to LLM
+   │       │   └─→ Repeat (max 5 iterations)
+   │       └─→ Final answer + tools_used
+   ├─→ Update conversation (PostgreSQL)
+   └─→ Background: Extract memories & entities
+4. ChatResponse (DTO) returned with tools_used
 5. User ← JSON response
+```
+
+#### Function Calling Flow (Agentic Loop)
+
+```
+1. LLMService.chat_with_tools() called
+2. Send request with tool definitions to LLM
+3. LLM decides to use tool (e.g., "calculator")
+4. ToolRegistry.execute_tool("calculator", {"expression": "156 * 78"})
+5. Tool executes → returns result (12168)
+6. Result sent back to LLM
+7. LLM uses result to formulate final answer
+8. Response returned with tools_used metadata
 ```
 
 #### Memory Creation Flow

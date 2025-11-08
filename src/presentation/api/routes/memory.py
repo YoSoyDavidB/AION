@@ -17,10 +17,14 @@ from src.application.use_cases.memory_use_cases import (
     GetMemoryByIdUseCase,
     SearchMemoriesUseCase,
 )
+from src.infrastructure.vector_store.memory_repository_impl import (
+    QdrantMemoryRepository,
+)
 from src.presentation.api.dependencies import (
     get_create_memory_use_case,
     get_delete_memory_use_case,
     get_memory_by_id_use_case,
+    get_memory_repository,
     get_search_memories_use_case,
 )
 from src.shared.logging import get_logger
@@ -104,6 +108,65 @@ async def search_memories(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to search memories: {str(e)}",
+        )
+
+
+@router.get("/memories/user/{user_id}", response_model=list[MemoryResponse])
+async def get_user_memories(
+    user_id: str,
+    limit: int = 100,
+    memory_repo: QdrantMemoryRepository = Depends(get_memory_repository),
+):
+    """
+    Retrieve all memories for a user.
+
+    Args:
+        user_id: User identifier
+        limit: Maximum number of memories to return
+        memory_repo: Injected memory repository
+
+    Returns:
+        List of user memories
+
+    Raises:
+        HTTPException: If retrieval fails
+    """
+    try:
+        logger.info("get_user_memories_request", user_id=user_id, limit=limit)
+
+        # Use get_recent to get all memories for the user
+        # This returns memories sorted by last_referenced_at
+        memories = await memory_repo.get_recent(limit=limit)
+
+        # Filter by user_id (if the repository doesn't do it already)
+        user_memories = [m for m in memories if m.user_id == user_id]
+
+        logger.info("user_memories_retrieved", count=len(user_memories))
+
+        # Convert to response format
+        responses = [
+            MemoryResponse(
+                memory_id=m.memory_id,
+                user_id=m.user_id,
+                short_text=m.short_text,
+                memory_type=m.memory_type,
+                sensitivity=m.sensitivity,
+                relevance_score=m.relevance_score,
+                num_times_referenced=m.num_times_referenced,
+                source=m.source,
+                created_at=m.created_at,
+                last_referenced_at=m.last_referenced_at,
+            )
+            for m in user_memories
+        ]
+
+        return responses
+
+    except Exception as e:
+        logger.error("get_user_memories_failed", user_id=user_id, error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve user memories: {str(e)}",
         )
 
 
