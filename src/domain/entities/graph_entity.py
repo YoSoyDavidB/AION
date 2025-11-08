@@ -20,6 +20,7 @@ class EntityType(str, Enum):
     DOCUMENT = "document"
     EVENT = "event"
     LOCATION = "location"
+    TECHNOLOGY = "technology"
 
 
 class RelationType(str, Enum):

@@ -5,8 +5,12 @@ Use case for chat conversation management.
 from uuid import uuid4
 
 from src.application.dtos.chat_dto import ChatRequest, ChatResponse
+from src.application.dtos.entity_dto import EntityExtractionRequest
 from src.application.dtos.memory_dto import MemoryCreateRequest
 from src.application.dtos.rag_dto import RAGRequest
+from src.application.use_cases.entity_extraction_use_case import (
+    EntityExtractionUseCase,
+)
 from src.application.use_cases.memory_use_cases import CreateMemoryUseCase
 from src.application.use_cases.rag_use_case import RAGUseCase
 from src.domain.entities.conversation import Conversation, MessageRole
@@ -27,7 +31,8 @@ class ChatUseCase(LoggerMixin):
     3. Retrieve relevant context via RAG
     4. Generate assistant response
     5. Extract and store new memories
-    6. Update conversation
+    6. Extract and store entities in knowledge graph
+    7. Update conversation
     """
 
     def __init__(
@@ -35,11 +40,13 @@ class ChatUseCase(LoggerMixin):
         conversation_repo: IConversationRepository,
         rag_use_case: RAGUseCase,
         create_memory_use_case: CreateMemoryUseCase,
+        entity_extraction_use_case: EntityExtractionUseCase,
         llm_service: LLMService,
     ) -> None:
         self.conversation_repo = conversation_repo
         self.rag_use_case = rag_use_case
         self.create_memory_use_case = create_memory_use_case
+        self.entity_extraction_use_case = entity_extraction_use_case
         self.llm_service = llm_service
 
     async def execute(self, request: ChatRequest) -> ChatResponse:
@@ -90,14 +97,21 @@ class ChatUseCase(LoggerMixin):
                 user_id=request.user_id,
             )
 
-            # Step 6: Update conversation with extracted memories
+            # Step 6: Extract and store entities in knowledge graph
+            entities_extracted = await self._extract_entities(
+                conversation_text=self._get_conversation_text(conversation),
+                conversation_id=str(conversation.conversation_id),
+                user_id=request.user_id,
+            )
+
+            # Step 7: Update conversation with extracted memories
             for memory_id in new_memories:
                 conversation.add_extracted_memory(memory_id)
 
-            # Step 7: Save conversation
+            # Step 8: Save conversation
             await self.conversation_repo.update(conversation)
 
-            # Step 8: Build response
+            # Step 9: Build response
             response = ChatResponse(
                 conversation_id=conversation.conversation_id,
                 message=rag_response.answer,
@@ -112,6 +126,10 @@ class ChatUseCase(LoggerMixin):
                     "context_tokens": rag_response.context.total_tokens,
                     "confidence": rag_response.confidence,
                     "sources": rag_response.sources,
+                    "entities_created": entities_extracted.get("num_entities_created", 0),
+                    "relationships_created": entities_extracted.get(
+                        "num_relationships_created", 0
+                    ),
                 },
             )
 
@@ -224,6 +242,55 @@ class ChatUseCase(LoggerMixin):
             )
             # Don't fail the entire chat if memory extraction fails
             return []
+
+    async def _extract_entities(
+        self, conversation_text: str, conversation_id: str, user_id: str
+    ) -> dict:
+        """
+        Extract and store entities from conversation.
+
+        Args:
+            conversation_text: Full conversation text
+            conversation_id: Conversation identifier
+            user_id: User identifier
+
+        Returns:
+            Dictionary with extraction statistics
+        """
+        try:
+            # Extract entities using the use case
+            extraction_request = EntityExtractionRequest(
+                text=conversation_text,
+                user_id=user_id,
+                source="chat",
+                metadata={"conversation_id": conversation_id},
+            )
+
+            extraction_response = await self.entity_extraction_use_case.execute(
+                extraction_request
+            )
+
+            self.logger.info(
+                "entities_extracted_from_conversation",
+                num_entities=len(extraction_response.entities),
+                num_created=extraction_response.num_entities_created,
+                num_relationships=len(extraction_response.relationships),
+                conversation_id=conversation_id,
+            )
+
+            return {
+                "num_entities_created": extraction_response.num_entities_created,
+                "num_relationships_created": extraction_response.num_relationships_created,
+            }
+
+        except Exception as e:
+            self.logger.error(
+                "entity_extraction_failed",
+                conversation_id=conversation_id,
+                error=str(e),
+            )
+            # Don't fail the entire chat if entity extraction fails
+            return {"num_entities_created": 0, "num_relationships_created": 0}
 
     def _get_conversation_text(self, conversation: Conversation) -> str:
         """

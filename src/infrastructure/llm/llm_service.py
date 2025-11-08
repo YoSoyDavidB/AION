@@ -306,3 +306,170 @@ Respond with ONLY the intent name, nothing else."""
         )
 
         return description
+
+    async def extract_entities(
+        self, text: str, context: str | None = None
+    ) -> list[dict[str, Any]]:
+        """
+        Extract named entities from text for knowledge graph.
+
+        Args:
+            text: Text to extract entities from
+            context: Optional additional context
+
+        Returns:
+            List of extracted entities with metadata
+
+        Raises:
+            LLMServiceError: If extraction fails
+        """
+        self.logger.info("extracting_entities", text_length=len(text))
+
+        system_prompt = """You are an entity extraction assistant. Analyze the text and extract important named entities.
+
+For each entity, provide:
+- name: The entity name (exact as it appears)
+- type: One of [person, project, concept, organization, document, event, location]
+- description: Brief description of the entity (1-2 sentences)
+- properties: Key-value pairs with additional info (e.g., {"role": "developer", "status": "active"})
+- confidence: Float between 0 and 1
+
+Extract only significant entities (people, organizations, projects, concepts, locations, events).
+Avoid extracting common nouns or trivial mentions.
+
+Return ONLY a valid JSON array of entity objects. Example:
+[
+  {
+    "name": "María González",
+    "type": "person",
+    "description": "Team member working on the AION project",
+    "properties": {"role": "developer"},
+    "confidence": 0.95
+  },
+  {
+    "name": "AION",
+    "type": "project",
+    "description": "AI personal assistant with long-term memory",
+    "properties": {"status": "development"},
+    "confidence": 1.0
+  }
+]
+
+If no significant entities are found, return an empty array: []"""
+
+        user_prompt = f"Text to analyze:\n{text}"
+        if context:
+            user_prompt = f"Context:\n{context}\n\n{user_prompt}"
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        response = await self.chat(messages, temperature=0.2, max_tokens=2000)
+
+        # Parse JSON response
+        try:
+            import json
+
+            entities = json.loads(response.strip())
+            self.logger.info("entities_extracted", count=len(entities))
+            return entities
+
+        except json.JSONDecodeError as e:
+            self.logger.error(
+                "entity_extraction_json_error", error=str(e), response=response
+            )
+            raise LLMServiceError(
+                "Failed to parse entity extraction response",
+                details={"error": str(e), "response": response[:500]},
+            ) from e
+
+    async def extract_relationships(
+        self, text: str, entities: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """
+        Extract relationships between entities from text.
+
+        Args:
+            text: Text containing the entities
+            entities: List of extracted entities
+
+        Returns:
+            List of relationships
+
+        Raises:
+            LLMServiceError: If extraction fails
+        """
+        if len(entities) < 2:
+            self.logger.info("skipping_relationship_extraction", reason="not_enough_entities")
+            return []
+
+        self.logger.info(
+            "extracting_relationships",
+            text_length=len(text),
+            num_entities=len(entities),
+        )
+
+        entity_names = [e["name"] for e in entities]
+
+        system_prompt = """You are a relationship extraction assistant. Analyze the text and identify meaningful relationships between the provided entities.
+
+For each relationship, provide:
+- source_name: Source entity name (must match exactly from entity list)
+- target_name: Target entity name (must match exactly from entity list)
+- type: One of [RELATED_TO, MENTIONED_IN, PART_OF, CREATED_BY, WORKS_ON, LOCATED_IN, ASSOCIATED_WITH, DEPENDS_ON]
+- properties: Key-value pairs with additional info (e.g., {"context": "mentioned in meeting"})
+- strength: Float between 0 and 1 indicating relationship strength
+
+Extract only clear, meaningful relationships. Avoid speculative connections.
+
+Return ONLY a valid JSON array of relationship objects. Example:
+[
+  {
+    "source_name": "María González",
+    "target_name": "AION",
+    "type": "WORKS_ON",
+    "properties": {"role": "developer"},
+    "strength": 0.9
+  },
+  {
+    "source_name": "AION",
+    "target_name": "FastAPI",
+    "type": "DEPENDS_ON",
+    "properties": {"component": "backend framework"},
+    "strength": 0.95
+  }
+]
+
+If no relationships are found, return an empty array: []"""
+
+        user_prompt = f"""Entities found:
+{', '.join(entity_names)}
+
+Text to analyze:
+{text}"""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        response = await self.chat(messages, temperature=0.2, max_tokens=2000)
+
+        # Parse JSON response
+        try:
+            import json
+
+            relationships = json.loads(response.strip())
+            self.logger.info("relationships_extracted", count=len(relationships))
+            return relationships
+
+        except json.JSONDecodeError as e:
+            self.logger.error(
+                "relationship_extraction_json_error", error=str(e), response=response
+            )
+            raise LLMServiceError(
+                "Failed to parse relationship extraction response",
+                details={"error": str(e), "response": response[:500]},
+            ) from e

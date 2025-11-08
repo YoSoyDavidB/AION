@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from src.config.settings import get_settings
-from src.presentation.api.routes import chat, document, health, memory
+from src.presentation.api.routes import chat, document, entity, health, memory
 from src.shared.exceptions import AIONException, get_http_status_code
 from src.shared.logging import get_logger, setup_logging
 
@@ -114,6 +114,7 @@ app.include_router(health.router, prefix="/api/v1", tags=["Health"])
 app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
 app.include_router(memory.router, prefix="/api/v1", tags=["Memory"])
 app.include_router(document.router, prefix="/api/v1", tags=["Documents"])
+app.include_router(entity.router, prefix="/api/v1", tags=["Entities"])
 
 
 # Root endpoint

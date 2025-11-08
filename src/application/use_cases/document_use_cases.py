@@ -10,6 +10,10 @@ from src.application.dtos.document_dto import (
     DocumentUploadRequest,
     DocumentUploadResponse,
 )
+from src.application.dtos.entity_dto import EntityExtractionRequest
+from src.application.use_cases.entity_extraction_use_case import (
+    EntityExtractionUseCase,
+)
 from src.domain.entities.document import Document
 from src.domain.repositories.document_repository import IDocumentRepository
 from src.infrastructure.document_processing.document_processor import DocumentProcessor
@@ -26,10 +30,12 @@ class UploadDocumentUseCase(LoggerMixin):
         document_repo: IDocumentRepository,
         embedding_service: EmbeddingService,
         document_processor: DocumentProcessor,
+        entity_extraction_use_case: EntityExtractionUseCase | None = None,
     ) -> None:
         self.document_repo = document_repo
         self.embedding_service = embedding_service
         self.document_processor = document_processor
+        self.entity_extraction_use_case = entity_extraction_use_case
 
     async def execute(
         self, request: DocumentUploadRequest, file_content: bytes, filename: str
@@ -127,6 +133,41 @@ class UploadDocumentUseCase(LoggerMixin):
                 num_chunks=len(chunks),
                 total_chars=total_chars,
             )
+
+            # Step 7: Extract entities from document if use case is available
+            entities_created = 0
+            relationships_created = 0
+            if self.entity_extraction_use_case:
+                try:
+                    extraction_request = EntityExtractionRequest(
+                        text=text_content,
+                        user_id=request.user_id,
+                        source="document",
+                        metadata={
+                            "doc_id": str(doc_id),
+                            "filename": filename,
+                            "title": request.title,
+                        },
+                    )
+                    extraction_response = await self.entity_extraction_use_case.execute(
+                        extraction_request
+                    )
+                    entities_created = extraction_response.num_entities_created
+                    relationships_created = extraction_response.num_relationships_created
+
+                    self.logger.info(
+                        "entities_extracted_from_document",
+                        doc_id=str(doc_id),
+                        entities_created=entities_created,
+                        relationships_created=relationships_created,
+                    )
+                except Exception as e:
+                    self.logger.error(
+                        "document_entity_extraction_failed",
+                        doc_id=str(doc_id),
+                        error=str(e),
+                    )
+                    # Don't fail upload if entity extraction fails
 
             return DocumentUploadResponse(
                 doc_id=doc_id,

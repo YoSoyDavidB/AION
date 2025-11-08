@@ -10,6 +10,9 @@ from src.application.use_cases.document_use_cases import (
     SearchDocumentsUseCase,
     UploadDocumentUseCase,
 )
+from src.application.use_cases.entity_extraction_use_case import (
+    EntityExtractionUseCase,
+)
 from src.application.use_cases.memory_use_cases import (
     CreateMemoryUseCase,
     DeleteMemoryUseCase,
@@ -124,6 +127,15 @@ def get_rag_use_case() -> RAGUseCase:
         document_repo=get_document_repository(),
         embedding_service=get_embedding_service(),
         llm_service=get_llm_service(),
+        graph_repo=get_graph_repository(),
+    )
+
+
+def get_entity_extraction_use_case() -> EntityExtractionUseCase:
+    """Get entity extraction use case with dependencies."""
+    return EntityExtractionUseCase(
+        graph_repo=get_graph_repository(),
+        llm_service=get_llm_service(),
     )
 
 
@@ -133,6 +145,7 @@ def get_chat_use_case() -> ChatUseCase:
         conversation_repo=get_conversation_repository(),
         rag_use_case=get_rag_use_case(),
         create_memory_use_case=get_create_memory_use_case(),
+        entity_extraction_use_case=get_entity_extraction_use_case(),
         llm_service=get_llm_service(),
     )
 
@@ -143,6 +156,7 @@ def get_upload_document_use_case() -> UploadDocumentUseCase:
         document_repo=get_document_repository(),
         embedding_service=get_embedding_service(),
         document_processor=get_document_processor(),
+        entity_extraction_use_case=get_entity_extraction_use_case(),
     )
 
 

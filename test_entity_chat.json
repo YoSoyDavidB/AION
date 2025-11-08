@@ -1,0 +1,6 @@
+{
+  "user_id": "david",
+  "message": "I spoke with Maria Gonzalez about the AION project we are developing with FastAPI for ACME Corp. We need to integrate Neo4j for the knowledge graph and use Claude 3.5 Sonnet as the LLM model.",
+  "use_memory": true,
+  "use_knowledge_base": true
+}

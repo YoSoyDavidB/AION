@@ -5,6 +5,7 @@ Use case for RAG (Retrieval-Augmented Generation) pipeline.
 from src.application.dtos.memory_dto import MemoryResponse
 from src.application.dtos.rag_dto import RAGContext, RAGRequest, RAGResponse
 from src.domain.repositories.document_repository import IDocumentRepository
+from src.domain.repositories.graph_repository import IGraphRepository
 from src.domain.repositories.memory_repository import IMemoryRepository
 from src.infrastructure.embeddings.embedding_service import EmbeddingService
 from src.infrastructure.llm.llm_service import LLMService
@@ -17,7 +18,7 @@ class RAGUseCase(LoggerMixin):
     Use case for RAG-based question answering.
 
     This orchestrates the entire RAG pipeline:
-    1. Retrieve relevant context (memories + documents)
+    1. Retrieve relevant context (memories + documents + knowledge graph)
     2. Assemble context into a coherent prompt
     3. Generate answer using LLM
     """
@@ -28,11 +29,13 @@ class RAGUseCase(LoggerMixin):
         document_repo: IDocumentRepository,
         embedding_service: EmbeddingService,
         llm_service: LLMService,
+        graph_repo: IGraphRepository | None = None,
     ) -> None:
         self.memory_repo = memory_repo
         self.document_repo = document_repo
         self.embedding_service = embedding_service
         self.llm_service = llm_service
+        self.graph_repo = graph_repo
 
     async def execute(self, request: RAGRequest) -> RAGResponse:
         """
@@ -146,8 +149,13 @@ class RAGUseCase(LoggerMixin):
                 for doc, score in doc_results
             ]
 
+        # Retrieve entities from knowledge graph if available
+        entities = []
+        if self.graph_repo:
+            entities = await self._retrieve_entities(request.query)
+
         # Assemble context text
-        context_text = self._assemble_context_text(memories, documents)
+        context_text = self._assemble_context_text(memories, documents, entities)
 
         # Estimate token count (rough approximation)
         total_tokens = len(context_text) // 4
@@ -159,15 +167,92 @@ class RAGUseCase(LoggerMixin):
             total_tokens=total_tokens,
         )
 
+    async def _retrieve_entities(self, query: str) -> list[dict]:
+        """
+        Retrieve relevant entities from knowledge graph.
+
+        Args:
+            query: User query
+
+        Returns:
+            List of entity dictionaries with relationships
+        """
+        try:
+            # Search for entities matching the query
+            search_results = await self.graph_repo.search_entities(
+                query=query,
+                entity_type=None,  # Search all types
+                limit=5,  # Limit to top 5 entities
+            )
+
+            entities_with_relations = []
+
+            for result in search_results:
+                entity = result.entity
+
+                # Get relationships for this entity
+                relationships = await self.graph_repo.get_entity_relationships(
+                    entity_id=entity.entity_id,
+                    direction="both",
+                )
+
+                # Get related entities
+                related_entities = []
+                for rel in relationships[:3]:  # Limit to 3 relationships per entity
+                    # Get the target entity
+                    if rel.source_entity_id == entity.entity_id:
+                        related = await self.graph_repo.get_entity_by_id(
+                            rel.target_entity_id
+                        )
+                        direction = "outgoing"
+                    else:
+                        related = await self.graph_repo.get_entity_by_id(
+                            rel.source_entity_id
+                        )
+                        direction = "incoming"
+
+                    if related:
+                        related_entities.append({
+                            "name": related.name,
+                            "type": related.entity_type.value,
+                            "relationship": rel.relationship_type.value,
+                            "direction": direction,
+                        })
+
+                entities_with_relations.append({
+                    "name": entity.name,
+                    "type": entity.entity_type.value,
+                    "description": entity.description,
+                    "properties": entity.properties,
+                    "related": related_entities,
+                })
+
+            self.logger.info(
+                "entities_retrieved_for_rag",
+                count=len(entities_with_relations),
+            )
+
+            return entities_with_relations
+
+        except Exception as e:
+            self.logger.error(
+                "entity_retrieval_failed",
+                query=query,
+                error=str(e),
+            )
+            # Don't fail the entire RAG pipeline if entity retrieval fails
+            return []
+
     def _assemble_context_text(
-        self, memories: list[MemoryResponse], documents: list[dict]
+        self, memories: list[MemoryResponse], documents: list[dict], entities: list[dict]
     ) -> str:
         """
-        Assemble context from memories and documents into text.
+        Assemble context from memories, documents, and entities into text.
 
         Args:
             memories: Retrieved memories
             documents: Retrieved documents
+            entities: Retrieved entities from knowledge graph
 
         Returns:
             Assembled context text
@@ -190,6 +275,24 @@ class RAGUseCase(LoggerMixin):
                 doc_text += f"   Path: {doc['path']}\n"
                 doc_text += f"   Content: {doc['content'][:300]}...\n\n"
             context_parts.append(doc_text)
+
+        # Add entities from knowledge graph
+        if entities:
+            entity_text = "## Knowledge Graph Entities\n\n"
+            for i, entity in enumerate(entities, 1):
+                entity_text += f"{i}. **{entity['name']}** ({entity['type']})\n"
+                if entity.get("description"):
+                    entity_text += f"   {entity['description']}\n"
+
+                # Add related entities
+                if entity.get("related"):
+                    entity_text += f"   Relationships:\n"
+                    for rel in entity["related"]:
+                        rel_symbol = "->" if rel["direction"] == "outgoing" else "<-"
+                        entity_text += f"   - {rel_symbol} {rel['relationship']}: {rel['name']} ({rel['type']})\n"
+
+                entity_text += "\n"
+            context_parts.append(entity_text)
 
         return "\n".join(context_parts) if context_parts else "No relevant context found."
 

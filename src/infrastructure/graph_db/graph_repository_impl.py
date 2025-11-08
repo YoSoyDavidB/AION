@@ -2,6 +2,7 @@
 Neo4j implementation of Graph repository.
 """
 
+import json
 from uuid import UUID
 
 from src.domain.entities.graph_entity import (
@@ -63,10 +64,10 @@ class Neo4jGraphRepository(IGraphRepository, LoggerMixin):
                 "name": entity.name,
                 "entity_type": entity.entity_type.value,
                 "description": entity.description,
-                "properties": entity.properties,
+                "properties": json.dumps(entity.properties),  # Convert dict to JSON string
                 "created_at": entity.created_at.isoformat(),
                 "updated_at": entity.updated_at.isoformat(),
-                "metadata": entity.metadata,
+                "metadata": json.dumps(entity.metadata),  # Convert dict to JSON string
             }
 
             await self.client.execute_write(query, parameters)
@@ -180,9 +181,9 @@ class Neo4jGraphRepository(IGraphRepository, LoggerMixin):
                 "name": entity.name,
                 "entity_type": entity.entity_type.value,
                 "description": entity.description,
-                "properties": entity.properties,
+                "properties": json.dumps(entity.properties),  # Convert dict to JSON string
                 "updated_at": entity.updated_at.isoformat(),
-                "metadata": entity.metadata,
+                "metadata": json.dumps(entity.metadata),  # Convert dict to JSON string
             }
 
             await self.client.execute_write(query, parameters)
@@ -292,10 +293,10 @@ class Neo4jGraphRepository(IGraphRepository, LoggerMixin):
                 "source_id": str(relationship.source_entity_id),
                 "target_id": str(relationship.target_entity_id),
                 "relationship_id": str(relationship.relationship_id),
-                "properties": relationship.properties,
+                "properties": json.dumps(relationship.properties),  # Convert dict to JSON string
                 "strength": relationship.strength,
                 "created_at": relationship.created_at.isoformat(),
-                "metadata": relationship.metadata,
+                "metadata": json.dumps(relationship.metadata),  # Convert dict to JSON string
             }
 
             await self.client.execute_write(query, parameters)
@@ -369,9 +370,9 @@ class Neo4jGraphRepository(IGraphRepository, LoggerMixin):
 
             parameters = {
                 "relationship_id": str(relationship.relationship_id),
-                "properties": relationship.properties,
+                "properties": json.dumps(relationship.properties),  # Convert dict to JSON string
                 "strength": relationship.strength,
-                "metadata": relationship.metadata,
+                "metadata": json.dumps(relationship.metadata),  # Convert dict to JSON string
             }
 
             await self.client.execute_write(query, parameters)
@@ -454,6 +455,7 @@ class Neo4jGraphRepository(IGraphRepository, LoggerMixin):
                 query, {"entity_id": str(entity_id)}
             )
 
+            # execute_query returns list[dict[str, Any]] according to its type hint
             relationships = [self._result_to_relationship(r) for r in results]
 
             return relationships
@@ -713,35 +715,88 @@ class Neo4jGraphRepository(IGraphRepository, LoggerMixin):
         """Convert Neo4j node to GraphEntity."""
         from datetime import datetime
 
+        # Deserialize JSON strings to dicts
+        properties = node.get("properties", "{}")
+        if isinstance(properties, str):
+            properties = json.loads(properties)
+
+        metadata = node.get("metadata", "{}")
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata)
+
         return GraphEntity(
             entity_id=UUID(node["entity_id"]),
             name=node["name"],
             entity_type=EntityType(node["entity_type"]),
             description=node.get("description"),
-            properties=node.get("properties", {}),
+            properties=properties,
             created_at=node["created_at"]
             if isinstance(node["created_at"], datetime)
             else datetime.fromisoformat(str(node["created_at"])),
             updated_at=node["updated_at"]
             if isinstance(node["updated_at"], datetime)
             else datetime.fromisoformat(str(node["updated_at"])),
-            metadata=node.get("metadata", {}),
+            metadata=metadata,
         )
 
-    def _result_to_relationship(self, result: dict) -> GraphRelationship:
+    def _result_to_relationship(self, result: dict | tuple) -> GraphRelationship:
         """Convert query result to GraphRelationship."""
         from datetime import datetime
 
-        rel = result["r"]
+        # Handle tuple results (when Neo4j returns records as tuples)
+        if isinstance(result, tuple):
+            # Assuming order: (r, source_id, target_id, rel_type)
+            rel, source_id, target_id, rel_type = result[0], result[1], result[2], result[3]
+        else:
+            # Dict results
+            rel = result["r"]
+            source_id = result["source_id"]
+            target_id = result["target_id"]
+            rel_type = result["rel_type"]
+
+        # Neo4j relationship objects support dict-like access but may not have .get()
+        # Access properties safely
+        try:
+            properties = rel.get("properties", "{}")
+        except (AttributeError, TypeError):
+            # If .get() is not available, use bracket notation with fallback
+            try:
+                properties = rel["properties"] if "properties" in rel else "{}"
+            except (KeyError, TypeError):
+                properties = "{}"
+
+        if isinstance(properties, str):
+            properties = json.loads(properties)
+
+        try:
+            metadata = rel.get("metadata", "{}")
+        except (AttributeError, TypeError):
+            try:
+                metadata = rel["metadata"] if "metadata" in rel else "{}"
+            except (KeyError, TypeError):
+                metadata = "{}"
+
+        if isinstance(metadata, str):
+            metadata = json.loads(metadata)
+
+        # Access strength safely
+        try:
+            strength = rel.get("strength", 1.0)
+        except (AttributeError, TypeError):
+            try:
+                strength = rel["strength"] if "strength" in rel else 1.0
+            except (KeyError, TypeError):
+                strength = 1.0
+
         return GraphRelationship(
             relationship_id=UUID(rel["relationship_id"]),
-            source_entity_id=UUID(result["source_id"]),
-            target_entity_id=UUID(result["target_id"]),
-            relationship_type=RelationType(result["rel_type"]),
-            properties=rel.get("properties", {}),
-            strength=rel.get("strength", 1.0),
+            source_entity_id=UUID(source_id),
+            target_entity_id=UUID(target_id),
+            relationship_type=RelationType(rel_type),
+            properties=properties,
+            strength=strength,
             created_at=rel["created_at"]
             if isinstance(rel["created_at"], datetime)
             else datetime.fromisoformat(str(rel["created_at"])),
-            metadata=rel.get("metadata", {}),
+            metadata=metadata,
         )
