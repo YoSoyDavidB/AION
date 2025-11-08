@@ -1,0 +1,246 @@
+"""
+Use case for chat conversation management.
+"""
+
+from uuid import uuid4
+
+from src.application.dtos.chat_dto import ChatRequest, ChatResponse
+from src.application.dtos.memory_dto import MemoryCreateRequest
+from src.application.dtos.rag_dto import RAGRequest
+from src.application.use_cases.memory_use_cases import CreateMemoryUseCase
+from src.application.use_cases.rag_use_case import RAGUseCase
+from src.domain.entities.conversation import Conversation, MessageRole
+from src.domain.entities.memory import MemoryType, SensitivityLevel
+from src.domain.repositories.conversation_repository import IConversationRepository
+from src.infrastructure.llm.llm_service import LLMService
+from src.shared.exceptions import UseCaseExecutionError
+from src.shared.logging import LoggerMixin
+
+
+class ChatUseCase(LoggerMixin):
+    """
+    Use case for handling chat conversations.
+
+    This orchestrates the entire chat flow:
+    1. Retrieve or create conversation
+    2. Add user message
+    3. Retrieve relevant context via RAG
+    4. Generate assistant response
+    5. Extract and store new memories
+    6. Update conversation
+    """
+
+    def __init__(
+        self,
+        conversation_repo: IConversationRepository,
+        rag_use_case: RAGUseCase,
+        create_memory_use_case: CreateMemoryUseCase,
+        llm_service: LLMService,
+    ) -> None:
+        self.conversation_repo = conversation_repo
+        self.rag_use_case = rag_use_case
+        self.create_memory_use_case = create_memory_use_case
+        self.llm_service = llm_service
+
+    async def execute(self, request: ChatRequest) -> ChatResponse:
+        """
+        Execute chat conversation.
+
+        Args:
+            request: Chat request with user message
+
+        Returns:
+            Chat response with assistant message
+
+        Raises:
+            UseCaseExecutionError: If chat execution fails
+        """
+        try:
+            self.logger.info(
+                "executing_chat",
+                user_id=request.user_id,
+                message=request.message[:50],
+            )
+
+            # Step 1: Get or create conversation
+            conversation = await self._get_or_create_conversation(request)
+
+            # Step 2: Add user message
+            conversation.add_message(MessageRole.USER, request.message)
+
+            # Step 3: Generate response using RAG
+            rag_request = RAGRequest(
+                query=request.message,
+                user_id=request.user_id,
+                include_memories=request.use_memory,
+                include_documents=request.use_knowledge_base,
+                max_memories=request.max_context_memories,
+                max_documents=request.max_context_documents,
+            )
+
+            rag_response = await self.rag_use_case.execute(rag_request)
+
+            # Step 4: Add assistant message
+            conversation.add_message(MessageRole.ASSISTANT, rag_response.answer)
+
+            # Step 5: Extract and store new memories
+            new_memories = await self._extract_memories(
+                conversation_text=self._get_conversation_text(conversation),
+                conversation_id=str(conversation.conversation_id),
+                user_id=request.user_id,
+            )
+
+            # Step 6: Update conversation with extracted memories
+            for memory_id in new_memories:
+                conversation.add_extracted_memory(memory_id)
+
+            # Step 7: Save conversation
+            await self.conversation_repo.update(conversation)
+
+            # Step 8: Build response
+            response = ChatResponse(
+                conversation_id=conversation.conversation_id,
+                message=rag_response.answer,
+                memories_used=[
+                    str(mem.memory_id) for mem in rag_response.context.memories
+                ],
+                documents_used=[
+                    doc["doc_id"] for doc in rag_response.context.documents
+                ],
+                new_memories_created=[str(mem_id) for mem_id in new_memories],
+                metadata={
+                    "context_tokens": rag_response.context.total_tokens,
+                    "confidence": rag_response.confidence,
+                    "sources": rag_response.sources,
+                },
+            )
+
+            self.logger.info(
+                "chat_completed",
+                conversation_id=str(conversation.conversation_id),
+                new_memories=len(new_memories),
+            )
+
+            return response
+
+        except Exception as e:
+            self.logger.error("chat_execution_failed", error=str(e))
+            raise UseCaseExecutionError(
+                f"Chat execution failed: {str(e)}"
+            ) from e
+
+    async def _get_or_create_conversation(
+        self, request: ChatRequest
+    ) -> Conversation:
+        """
+        Get existing conversation or create a new one.
+
+        Args:
+            request: Chat request
+
+        Returns:
+            Conversation entity
+        """
+        # If conversation_id provided, try to get it
+        if request.conversation_id:
+            conversation = await self.conversation_repo.get_by_id(
+                request.conversation_id
+            )
+            if conversation:
+                return conversation
+
+        # Otherwise, get active conversation or create new
+        conversation = await self.conversation_repo.get_active_conversation(
+            request.user_id
+        )
+
+        if conversation is None:
+            # Create new conversation
+            conversation = Conversation(
+                user_id=request.user_id,
+                messages=[],
+            )
+            await self.conversation_repo.create(conversation)
+
+            self.logger.info(
+                "conversation_created",
+                conversation_id=str(conversation.conversation_id),
+                user_id=request.user_id,
+            )
+
+        return conversation
+
+    async def _extract_memories(
+        self, conversation_text: str, conversation_id: str, user_id: str
+    ) -> list:
+        """
+        Extract and store new memories from conversation.
+
+        Args:
+            conversation_text: Full conversation text
+            conversation_id: Conversation identifier
+            user_id: User identifier
+
+        Returns:
+            List of created memory IDs
+        """
+        try:
+            # Use LLM to extract memories
+            extracted = await self.llm_service.extract_memories(conversation_text)
+
+            memory_ids = []
+
+            for memory_data in extracted:
+                # Create memory request
+                memory_request = MemoryCreateRequest(
+                    user_id=user_id,
+                    short_text=memory_data["short_text"],
+                    memory_type=MemoryType(memory_data["type"]),
+                    sensitivity=SensitivityLevel(memory_data["sensitivity"]),
+                    source=f"conversation_{conversation_id}",
+                    relevance_score=memory_data.get("relevance_score", 1.0),
+                    metadata={"extracted_from": conversation_id},
+                )
+
+                # Create memory
+                memory_response = await self.create_memory_use_case.execute(
+                    memory_request
+                )
+                memory_ids.append(memory_response.memory_id)
+
+            self.logger.info(
+                "memories_extracted",
+                count=len(memory_ids),
+                conversation_id=conversation_id,
+            )
+
+            return memory_ids
+
+        except Exception as e:
+            self.logger.error(
+                "memory_extraction_failed",
+                conversation_id=conversation_id,
+                error=str(e),
+            )
+            # Don't fail the entire chat if memory extraction fails
+            return []
+
+    def _get_conversation_text(self, conversation: Conversation) -> str:
+        """
+        Get conversation as formatted text.
+
+        Args:
+            conversation: Conversation entity
+
+        Returns:
+            Formatted conversation text
+        """
+        # Get last N messages for context (avoid too long conversations)
+        recent_messages = conversation.get_last_n_messages(10)
+
+        conversation_parts = []
+        for message in recent_messages:
+            role = message.role.value.upper()
+            conversation_parts.append(f"{role}: {message.content}")
+
+        return "\n\n".join(conversation_parts)
