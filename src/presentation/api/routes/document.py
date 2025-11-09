@@ -18,6 +18,7 @@ from src.application.use_cases.document_use_cases import (
 )
 from src.presentation.api.dependencies import (
     get_delete_document_use_case,
+    get_document_repository,
     get_search_documents_use_case,
     get_upload_document_use_case,
 )
@@ -130,6 +131,85 @@ async def search_documents(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to search documents: {str(e)}",
+        )
+
+
+@router.get("/documents/user/{user_id}")
+async def get_user_documents(
+    user_id: str,
+    limit: int = 100,
+    document_repo=Depends(get_document_repository),
+):
+    """
+    Retrieve all documents for a user (grouped by doc_id).
+
+    Args:
+        user_id: User identifier
+        limit: Maximum number of document chunks to fetch
+        document_repo: Injected document repository
+
+    Returns:
+        List of unique documents with their metadata
+    """
+    try:
+        logger.info("get_user_documents_request", user_id=user_id, limit=limit)
+
+        # Get recent documents using scroll
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        filter_conditions = Filter(
+            must=[
+                FieldCondition(
+                    key="user_id",
+                    match=MatchValue(value=user_id),
+                )
+            ]
+        )
+
+        results, _ = await document_repo.client.client.scroll(
+            collection_name=document_repo.collection_name,
+            scroll_filter=filter_conditions,
+            limit=limit,
+            with_vectors=False,
+        )
+
+        # Group chunks by doc_id to get unique documents
+        docs_by_id = {}
+        for point in results:
+            payload = point.payload
+            doc_id = payload["doc_id"]
+
+            if doc_id not in docs_by_id:
+                docs_by_id[doc_id] = {
+                    "doc_id": doc_id,
+                    "user_id": payload["user_id"],
+                    "title": payload.get("title", ""),
+                    "path": payload.get("path", ""),
+                    "tags": payload.get("tags", []),
+                    "created_at": payload.get("created_at", ""),
+                    "updated_at": payload.get("updated_at", ""),
+                    "source_type": payload.get("source_type", ""),
+                    "chunk_count": 0,
+                    "total_chars": 0,
+                }
+
+            # Increment counters
+            docs_by_id[doc_id]["chunk_count"] += 1
+            docs_by_id[doc_id]["total_chars"] += payload.get("char_count", 0)
+
+        # Convert to list and sort by updated_at
+        documents = list(docs_by_id.values())
+        documents.sort(key=lambda d: d.get("updated_at", ""), reverse=True)
+
+        logger.info("user_documents_retrieved", count=len(documents))
+
+        return documents
+
+    except Exception as e:
+        logger.error("get_user_documents_failed", user_id=user_id, error=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to retrieve user documents: {str(e)}",
         )
 
 

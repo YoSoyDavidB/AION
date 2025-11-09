@@ -27,7 +27,7 @@ import {
   FileCode,
 } from "lucide-react";
 
-export function Documents() {
+export function KnowledgeBase() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);

@@ -154,8 +154,8 @@ async def get_user_memories(
                 relevance_score=m.relevance_score,
                 num_times_referenced=m.num_times_referenced,
                 source=m.source,
-                created_at=m.created_at,
-                last_referenced_at=m.last_referenced_at,
+                created_at=m.timestamp.isoformat(),
+                last_referenced_at=m.last_referenced_at.isoformat(),
             )
             for m in user_memories
         ]
