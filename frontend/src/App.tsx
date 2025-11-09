@@ -7,6 +7,7 @@ import { Memories } from "./pages/Memories";
 import { Documents } from "./pages/Documents";
 import { KnowledgeGraph } from "./pages/KnowledgeGraph";
 import { Settings } from "./pages/Settings";
+import { Prompts } from "./pages/Prompts";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -30,6 +31,7 @@ function App() {
             <Route path="memories" element={<Memories />} />
             <Route path="documents" element={<Documents />} />
             <Route path="knowledge-graph" element={<KnowledgeGraph />} />
+            <Route path="prompts" element={<Prompts />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

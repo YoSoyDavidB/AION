@@ -23,6 +23,10 @@ const pageInfo: Record<string, { title: string; subtitle?: string }> = {
     title: "Knowledge Graph",
     subtitle: "Visualize entity relationships",
   },
+  "/prompts": {
+    title: "System Prompts",
+    subtitle: "Customize AI behavior",
+  },
   "/settings": {
     title: "Settings",
     subtitle: "Configure your preferences",

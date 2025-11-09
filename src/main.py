@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from src.config.settings import get_settings
-from src.presentation.api.routes import chat, document, entity, health, memory, obsidian_sync, integrations
+from src.presentation.api.routes import chat, document, entity, health, memory, obsidian_sync, integrations, prompts
 from src.shared.exceptions import AIONException, get_http_status_code
 from src.shared.logging import get_logger, setup_logging
 
@@ -119,6 +119,7 @@ app.include_router(document.router, prefix="/api/v1", tags=["Documents"])
 app.include_router(entity.router, prefix="/api/v1", tags=["Entities"])
 app.include_router(obsidian_sync.router, prefix="/api/v1", tags=["Obsidian Sync"])
 app.include_router(integrations.router, prefix="/api/v1", tags=["Integrations"])
+app.include_router(prompts.router, prefix="/api/v1", tags=["Prompts"])
 
 
 # Root endpoint

@@ -6,6 +6,7 @@ import {
   Network,
   LayoutDashboard,
   Settings,
+  Wand2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +16,7 @@ const navigation = [
   { name: "Memories", href: "/memories", icon: Database },
   { name: "Documents", href: "/documents", icon: FileText },
   { name: "Knowledge Graph", href: "/knowledge-graph", icon: Network },
+  { name: "Prompts", href: "/prompts", icon: Wand2 },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 

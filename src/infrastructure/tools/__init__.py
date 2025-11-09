@@ -7,7 +7,10 @@ from src.infrastructure.tools.code_executor_tool import CodeExecutorTool
 from src.infrastructure.tools.tool_registry import ToolRegistry
 from src.infrastructure.tools.web_search_tool import WebSearchTool
 
-# KnowledgeBaseTool is not imported here to avoid circular dependencies
-# Import it directly when needed: from src.infrastructure.tools.knowledge_base_tool import KnowledgeBaseTool
+# KnowledgeBaseTool, CalendarTool, and EmailTool are not imported here to avoid circular dependencies
+# Import them directly when needed:
+# from src.infrastructure.tools.knowledge_base_tool import KnowledgeBaseTool
+# from src.infrastructure.tools.calendar_tool import CalendarTool
+# from src.infrastructure.tools.email_tool import EmailTool
 
 __all__ = ["CalculatorTool", "CodeExecutorTool", "WebSearchTool", "ToolRegistry"]

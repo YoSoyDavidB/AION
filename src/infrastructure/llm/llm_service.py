@@ -6,7 +6,9 @@ from typing import TYPE_CHECKING, Any
 
 from src.config.settings import get_settings
 from src.domain.entities.tool import ToolCall
+from src.domain.entities.system_prompt import PromptType
 from src.infrastructure.llm.openrouter_client import OpenRouterClient
+from src.infrastructure.llm.prompt_service import get_prompt_service, PromptService
 from src.shared.exceptions import LLMServiceError
 from src.shared.logging import LoggerMixin
 
@@ -29,6 +31,7 @@ class LLMService(LoggerMixin):
         self,
         client: OpenRouterClient | None = None,
         tool_registry: "ToolRegistry | None" = None,
+        prompt_service: PromptService | None = None,
     ) -> None:
         """
         Initialize LLM service.
@@ -36,10 +39,12 @@ class LLMService(LoggerMixin):
         Args:
             client: OpenRouter client instance (optional, will create if not provided)
             tool_registry: Tool registry for function calling (optional)
+            prompt_service: Prompt service for retrieving system prompts (optional)
         """
         self.settings = get_settings()
         self.client = client or OpenRouterClient()
         self.tool_registry = tool_registry
+        self.prompt_service = prompt_service or get_prompt_service()
         self.default_model = self.settings.openrouter.openrouter_llm_model
         # Use faster, cheaper model for extractions
         self.extraction_model = "anthropic/claude-3-haiku"
@@ -113,25 +118,7 @@ class LLMService(LoggerMixin):
         """
         self.logger.info("extracting_memories", text_length=len(conversation_text))
 
-        system_prompt = """You are a memory extraction assistant. Analyze the conversation and extract key facts, preferences, and important information about the user.
-
-For each memory, provide:
-- short_text: A concise statement (max 150 chars)
-- type: One of [preference, fact, task, goal, profile]
-- relevance_score: Float between 0 and 1
-- sensitivity: One of [low, medium, high]
-
-Return ONLY a valid JSON array of memory objects. Example:
-[
-  {
-    "short_text": "User prefers concise technical answers",
-    "type": "preference",
-    "relevance_score": 0.9,
-    "sensitivity": "low"
-  }
-]
-
-If no significant memories are found, return an empty array: []"""
+        system_prompt = await self.prompt_service.get_prompt(PromptType.MEMORY_EXTRACTION)
 
         user_prompt = f"Conversation:\n{conversation_text}"
         if user_profile:

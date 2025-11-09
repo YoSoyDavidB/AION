@@ -39,6 +39,10 @@ from src.infrastructure.tools import (
     WebSearchTool,
 )
 from src.infrastructure.tools.knowledge_base_tool import KnowledgeBaseTool
+from src.infrastructure.tools.calendar_tool import CalendarTool
+from src.infrastructure.tools.email_tool import EmailTool
+from src.infrastructure.persistence.oauth_token_repository import OAuthTokenRepository
+from src.config.settings import get_settings
 
 
 # Infrastructure Singletons
@@ -74,6 +78,18 @@ def get_tool_registry() -> ToolRegistry:
         document_repo=get_document_repository(),
     )
     registry.register(kb_tool)
+
+    # Register Calendar Tool
+    calendar_tool = CalendarTool(
+        token_repo=get_oauth_token_repository(),
+    )
+    registry.register(calendar_tool)
+
+    # Register Email Tool
+    email_tool = EmailTool(
+        token_repo=get_oauth_token_repository(),
+    )
+    registry.register(email_tool)
 
     return registry
 
@@ -121,6 +137,13 @@ def get_graph_repository() -> Neo4jGraphRepository:
 def get_document_processor() -> DocumentProcessor:
     """Get or create document processor singleton."""
     return DocumentProcessor()
+
+
+@lru_cache
+def get_oauth_token_repository() -> OAuthTokenRepository:
+    """Get or create OAuth token repository singleton."""
+    settings = get_settings()
+    return OAuthTokenRepository(settings.security.oauth_encryption_key)
 
 
 # Use Case Dependencies
