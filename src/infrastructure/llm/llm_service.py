@@ -170,7 +170,9 @@ class LLMService(LoggerMixin):
             max_length=max_length,
         )
 
-        system_prompt = f"Summarize the following conversation in {max_length} characters or less. Focus on key topics, decisions, and action items."
+        # Get summarization prompt from database
+        base_prompt = await self.prompt_service.get_prompt(PromptType.SUMMARIZATION)
+        system_prompt = f"{base_prompt}\n\nMaximum length: {max_length} characters."
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -210,11 +212,8 @@ class LLMService(LoggerMixin):
         )
 
         if system_prompt is None:
-            system_prompt = """You are AION, an intelligent personal assistant with access to the user's knowledge base and conversation history.
-
-Use the provided context to answer the user's question accurately and concisely. If the context doesn't contain relevant information, say so honestly.
-
-Always cite sources when referencing specific information from the context."""
+            # Get RAG system prompt from database
+            system_prompt = await self.prompt_service.get_prompt(PromptType.RAG_SYSTEM)
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -249,10 +248,9 @@ Always cite sources when referencing specific information from the context."""
             num_intents=len(intents),
         )
 
-        system_prompt = f"""Classify the user's message into one of these intents:
-{', '.join(intents)}
-
-Respond with ONLY the intent name, nothing else."""
+        # Get intent classification prompt from database
+        base_prompt = await self.prompt_service.get_prompt(PromptType.INTENT_CLASSIFICATION)
+        system_prompt = f"{base_prompt}\n\nAvailable intents: {', '.join(intents)}"
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -288,7 +286,8 @@ Respond with ONLY the intent name, nothing else."""
             entity_type=entity_type,
         )
 
-        system_prompt = "Generate a concise description (max 100 words) for the entity based on the context provided."
+        # Get entity description prompt from database
+        system_prompt = await self.prompt_service.get_prompt(PromptType.ENTITY_DESCRIPTION)
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -326,37 +325,8 @@ Respond with ONLY the intent name, nothing else."""
         """
         self.logger.info("extracting_entities", text_length=len(text))
 
-        system_prompt = """You are an entity extraction assistant. Analyze the text and extract important named entities.
-
-For each entity, provide:
-- name: The entity name (exact as it appears)
-- type: One of [person, project, concept, organization, document, event, location]
-- description: Brief description of the entity (1-2 sentences)
-- properties: Key-value pairs with additional info (e.g., {"role": "developer", "status": "active"})
-- confidence: Float between 0 and 1
-
-Extract only significant entities (people, organizations, projects, concepts, locations, events).
-Avoid extracting common nouns or trivial mentions.
-
-Return ONLY a valid JSON array of entity objects. Example:
-[
-  {
-    "name": "María González",
-    "type": "person",
-    "description": "Team member working on the AION project",
-    "properties": {"role": "developer"},
-    "confidence": 0.95
-  },
-  {
-    "name": "AION",
-    "type": "project",
-    "description": "AI personal assistant with long-term memory",
-    "properties": {"status": "development"},
-    "confidence": 1.0
-  }
-]
-
-If no significant entities are found, return an empty array: []"""
+        # Get entity extraction prompt from database
+        system_prompt = await self.prompt_service.get_prompt(PromptType.ENTITY_EXTRACTION)
 
         user_prompt = f"Text to analyze:\n{text}"
         if context:
@@ -416,36 +386,8 @@ If no significant entities are found, return an empty array: []"""
 
         entity_names = [e["name"] for e in entities]
 
-        system_prompt = """You are a relationship extraction assistant. Analyze the text and identify meaningful relationships between the provided entities.
-
-For each relationship, provide:
-- source_name: Source entity name (must match exactly from entity list)
-- target_name: Target entity name (must match exactly from entity list)
-- type: One of [RELATED_TO, MENTIONED_IN, PART_OF, CREATED_BY, WORKS_ON, LOCATED_IN, ASSOCIATED_WITH, DEPENDS_ON]
-- properties: Key-value pairs with additional info (e.g., {"context": "mentioned in meeting"})
-- strength: Float between 0 and 1 indicating relationship strength
-
-Extract only clear, meaningful relationships. Avoid speculative connections.
-
-Return ONLY a valid JSON array of relationship objects. Example:
-[
-  {
-    "source_name": "María González",
-    "target_name": "AION",
-    "type": "WORKS_ON",
-    "properties": {"role": "developer"},
-    "strength": 0.9
-  },
-  {
-    "source_name": "AION",
-    "target_name": "FastAPI",
-    "type": "DEPENDS_ON",
-    "properties": {"component": "backend framework"},
-    "strength": 0.95
-  }
-]
-
-If no relationships are found, return an empty array: []"""
+        # Get relationship extraction prompt from database
+        system_prompt = await self.prompt_service.get_prompt(PromptType.RELATIONSHIP_EXTRACTION)
 
         user_prompt = f"""Entities found:
 {', '.join(entity_names)}
