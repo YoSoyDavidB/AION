@@ -6,6 +6,10 @@ AION is an intelligent personal assistant that maintains long-term memory across
 
 - **Long-Term Memory**: Remembers key facts, preferences, and conversations across sessions
 - **Obsidian Integration**: Seamlessly syncs and searches your Obsidian vault from GitHub
+- **Calendar & Email Integration**: Connect Google and Microsoft accounts for contextual assistance
+  - **Google**: Access Calendar events and Gmail messages
+  - **Microsoft**: Access Outlook Calendar and Email
+  - **Secure OAuth 2.0**: Encrypted token storage with automatic refresh
 - **Semantic Search**: RAG pipeline for intelligent context retrieval
 - **Entity Relationships**: Knowledge graph using Neo4j for advanced reasoning
 - **Function Calling / Tool Use**: LLM can use external tools for enhanced capabilities
@@ -96,7 +100,17 @@ The API will be available at `http://localhost:8000`
 - `NEO4J_PASSWORD`: Neo4j database password
 - `POSTGRES_PASSWORD`: PostgreSQL password
 
+### Optional Environment Variables (for OAuth Integrations)
+
+- `GOOGLE_CLIENT_ID`: Google OAuth client ID
+- `GOOGLE_CLIENT_SECRET`: Google OAuth client secret
+- `MICROSOFT_CLIENT_ID`: Microsoft OAuth client ID
+- `MICROSOFT_CLIENT_SECRET`: Microsoft OAuth client secret
+- `OAUTH_ENCRYPTION_KEY`: Fernet encryption key for token storage
+
 See `.env.example` for complete configuration options.
+
+**Note**: For detailed OAuth setup instructions, see [docs/OAUTH_SETUP.md](docs/OAUTH_SETUP.md).
 
 ## Project Structure
 
@@ -180,11 +194,30 @@ Once the server is running, visit:
 
 ## Key Endpoints
 
+### Chat & Memory
 - `POST /api/v1/chat` - Send message to assistant
 - `GET /api/v1/memories` - Retrieve stored memories
 - `POST /api/v1/memories` - Create new memory
 - `DELETE /api/v1/memories/{id}` - Delete specific memory
-- `POST /api/v1/sync` - Trigger Obsidian vault sync
+
+### Obsidian Sync
+- `POST /api/v1/obsidian/sync` - Trigger Obsidian vault sync
+- `GET /api/v1/obsidian/status` - Get sync status
+- `POST /api/v1/obsidian/cleanup` - Clean up deleted files
+
+### OAuth Integrations
+- `GET /api/v1/integrations/google/authorize` - Start Google OAuth flow
+- `GET /api/v1/integrations/google/status` - Get Google connection status
+- `GET /api/v1/integrations/google/calendar/events` - Get Google Calendar events
+- `GET /api/v1/integrations/google/gmail/messages` - Get Gmail messages
+- `DELETE /api/v1/integrations/google/disconnect` - Disconnect Google account
+- `GET /api/v1/integrations/microsoft/authorize` - Start Microsoft OAuth flow
+- `GET /api/v1/integrations/microsoft/status` - Get Microsoft connection status
+- `GET /api/v1/integrations/microsoft/calendar/events` - Get Outlook Calendar events
+- `GET /api/v1/integrations/microsoft/email/messages` - Get Outlook Email messages
+- `DELETE /api/v1/integrations/microsoft/disconnect` - Disconnect Microsoft account
+
+### Search
 - `GET /api/v1/search` - Search knowledge base
 
 ## Function Calling & Tools

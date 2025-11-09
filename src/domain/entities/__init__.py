@@ -17,6 +17,9 @@ from src.domain.entities.graph_entity import (
     RelationType,
 )
 from src.domain.entities.memory import Memory, MemoryType, SensitivityLevel
+from src.domain.entities.oauth_token import OAuthProvider, OAuthToken
+from src.domain.entities.calendar_event import CalendarEvent
+from src.domain.entities.email import Email, EmailAddress
 
 __all__ = [
     # Memory
@@ -37,4 +40,10 @@ __all__ = [
     "EntityType",
     "RelationType",
     "EntitySearchResult",
+    # OAuth & Integrations
+    "OAuthToken",
+    "OAuthProvider",
+    "CalendarEvent",
+    "Email",
+    "EmailAddress",
 ]

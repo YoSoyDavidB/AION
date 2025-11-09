@@ -221,6 +221,7 @@ class SecuritySettings(BaseSettings):
     secret_key: str = Field(..., description="Secret key for JWT and encryption")
     encrypt_at_rest: bool = Field(default=True, description="Encrypt data at rest")
     encryption_key: str = Field(..., description="Encryption key for sensitive data")
+    oauth_encryption_key: str = Field(..., description="Fernet encryption key for OAuth tokens")
     algorithm: str = Field(default="HS256", description="JWT algorithm")
     access_token_expire_minutes: int = Field(
         default=30, description="Access token expiration in minutes", ge=5
@@ -238,6 +239,70 @@ class RateLimitSettings(BaseSettings):
     rate_limit_per_minute: int = Field(
         default=60, description="Requests per minute", ge=1, le=1000
     )
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
+    )
+
+
+class GoogleOAuthSettings(BaseSettings):
+    """Google OAuth2 configuration for Calendar and Gmail."""
+
+    google_client_id: str | None = Field(default=None, description="Google OAuth2 Client ID")
+    google_client_secret: str | None = Field(default=None, description="Google OAuth2 Client Secret")
+    google_redirect_uri: str = Field(
+        default="http://localhost:8000/api/v1/integrations/google/callback",
+        description="Google OAuth2 Redirect URI"
+    )
+    google_scopes: list[str] = Field(
+        default=[
+            "https://www.googleapis.com/auth/calendar.readonly",
+            "https://www.googleapis.com/auth/gmail.readonly",
+            "https://www.googleapis.com/auth/userinfo.profile",
+            "https://www.googleapis.com/auth/userinfo.email",
+        ],
+        description="Google API scopes"
+    )
+
+    @property
+    def is_configured(self) -> bool:
+        """Check if Google OAuth is properly configured."""
+        return bool(self.google_client_id and self.google_client_secret)
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
+    )
+
+
+class MicrosoftOAuthSettings(BaseSettings):
+    """Microsoft OAuth2 configuration for Outlook Calendar and Email."""
+
+    microsoft_client_id: str | None = Field(default=None, description="Microsoft OAuth2 Client ID")
+    microsoft_client_secret: str | None = Field(default=None, description="Microsoft OAuth2 Client Secret")
+    microsoft_tenant_id: str = Field(default="common", description="Microsoft Tenant ID")
+    microsoft_redirect_uri: str = Field(
+        default="http://localhost:8000/api/v1/integrations/microsoft/callback",
+        description="Microsoft OAuth2 Redirect URI"
+    )
+    microsoft_scopes: list[str] = Field(
+        default=[
+            "Calendars.Read",
+            "Mail.Read",
+            "User.Read",
+            "offline_access",
+        ],
+        description="Microsoft Graph API scopes"
+    )
+
+    @property
+    def is_configured(self) -> bool:
+        """Check if Microsoft OAuth is properly configured."""
+        return bool(self.microsoft_client_id and self.microsoft_client_secret)
+
+    @property
+    def authority(self) -> str:
+        """Get Microsoft authority URL."""
+        return f"https://login.microsoftonline.com/{self.microsoft_tenant_id}"
 
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
@@ -262,6 +327,8 @@ class Settings:
         self.memory = MemorySettings()
         self.security = SecuritySettings()
         self.rate_limit = RateLimitSettings()
+        self.google_oauth = GoogleOAuthSettings()
+        self.microsoft_oauth = MicrosoftOAuthSettings()
 
     @property
     def is_development(self) -> bool:

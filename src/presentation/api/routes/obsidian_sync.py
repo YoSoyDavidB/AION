@@ -81,9 +81,6 @@ def get_sync_agent(
 @router.post("/sync", response_model=SyncVaultResponse)
 async def sync_vault(
     request: SyncVaultRequest,
-    agent: ObsidianSyncAgent = Depends(
-        lambda req=SyncVaultRequest: get_sync_agent(req.user_id)
-    ),
 ):
     """
     Sync Obsidian vault to knowledge base.
