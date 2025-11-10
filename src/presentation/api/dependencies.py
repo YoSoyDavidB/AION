@@ -37,10 +37,13 @@ from src.infrastructure.tools import (
     CodeExecutorTool,
     ToolRegistry,
     WebSearchTool,
+    WebFetchTool,
+    WeatherTool,
 )
 from src.infrastructure.tools.knowledge_base_tool import KnowledgeBaseTool
 from src.infrastructure.tools.calendar_tool import CalendarTool
 from src.infrastructure.tools.email_tool import EmailTool
+from src.infrastructure.tools.gmail_mcp_tool import GmailMCPTool
 from src.infrastructure.persistence.oauth_token_repository import OAuthTokenRepository
 from src.config.settings import get_settings
 
@@ -67,6 +70,14 @@ def get_tool_registry() -> ToolRegistry:
     web_search = WebSearchTool()
     registry.register(web_search)
 
+    # Register Web Fetch Tool
+    web_fetch = WebFetchTool()
+    registry.register(web_fetch)
+
+    # Register Weather Tool
+    weather = WeatherTool()
+    registry.register(weather)
+
     # Register Code Executor Tool
     code_executor = CodeExecutorTool()
     registry.register(code_executor)
@@ -85,11 +96,18 @@ def get_tool_registry() -> ToolRegistry:
     )
     registry.register(calendar_tool)
 
-    # Register Email Tool
-    email_tool = EmailTool(
-        token_repo=get_oauth_token_repository(),
-    )
-    registry.register(email_tool)
+    # Register Email Tool (MCP or traditional OAuth)
+    settings = get_settings()
+    if settings.mcp.is_gmail_configured:
+        # Use MCP-based Gmail tool (N8N integration)
+        email_tool = GmailMCPTool()
+        registry.register(email_tool)
+    else:
+        # Fallback to traditional OAuth-based email tool
+        email_tool = EmailTool(
+            token_repo=get_oauth_token_repository(),
+        )
+        registry.register(email_tool)
 
     return registry
 

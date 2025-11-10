@@ -28,7 +28,12 @@ Use this tool when you need:
 - General web information or facts
 - To verify or supplement existing knowledge
 
-Returns top search results with titles, snippets, and URLs."""
+IMPORTANT: This tool returns ONLY snippets and URLs. For complete information:
+1. Use web_search to find relevant URLs
+2. Then use web_fetch to read the FULL CONTENT of promising pages
+3. Snippets alone are usually insufficient for detailed answers
+
+Returns top search results with titles, SHORT SNIPPETS, and URLs."""
 
     @property
     def parameters(self) -> list[ToolParameter]:

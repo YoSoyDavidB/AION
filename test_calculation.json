@@ -1,7 +1,0 @@
-{
-  "user_id": "david",
-  "message": "Por favor calcula 25 * 4 + 10 y dime el resultado",
-  "use_memory": true,
-  "use_knowledge_base": true,
-  "use_tools": true
-}

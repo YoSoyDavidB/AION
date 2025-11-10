@@ -6,6 +6,7 @@ from typing import Any
 
 from src.config.settings import get_settings
 from src.infrastructure.llm.openrouter_client import OpenRouterClient
+from src.infrastructure.embeddings.embedding_cache import EmbeddingCache
 from src.shared.exceptions import EmbeddingServiceError
 from src.shared.logging import LoggerMixin
 
@@ -18,22 +19,33 @@ class EmbeddingService(LoggerMixin):
     Provides caching and batch processing capabilities.
     """
 
-    def __init__(self, client: OpenRouterClient | None = None) -> None:
+    def __init__(
+        self,
+        client: OpenRouterClient | None = None,
+        enable_cache: bool = True,
+        cache_size: int = 10000
+    ) -> None:
         """
         Initialize embedding service.
 
         Args:
             client: OpenRouter client instance (optional)
+            enable_cache: Whether to enable embedding cache
+            cache_size: Maximum cache size
         """
         self.settings = get_settings()
         self.client = client or OpenRouterClient()
         self.default_model = self.settings.openrouter.openrouter_embedding_model
         self.vector_size = self.settings.qdrant.qdrant_vector_size
 
+        # Initialize cache if enabled
+        self.cache = EmbeddingCache(max_size=cache_size) if enable_cache else None
+
         self.logger.info(
             "embedding_service_initialized",
             model=self.default_model,
             vector_size=self.vector_size,
+            cache_enabled=enable_cache
         )
 
     async def close(self) -> None:
@@ -64,6 +76,12 @@ class EmbeddingService(LoggerMixin):
                 details={"text": text},
             )
 
+        # Check cache first
+        if self.cache:
+            cached = self.cache.get(text, model)
+            if cached is not None:
+                return cached
+
         try:
             self.logger.debug(
                 "embedding_text",
@@ -81,6 +99,10 @@ class EmbeddingService(LoggerMixin):
                     actual=len(embedding),
                     model=model,
                 )
+
+            # Cache the result
+            if self.cache:
+                self.cache.put(text, model, embedding)
 
             return embedding
 

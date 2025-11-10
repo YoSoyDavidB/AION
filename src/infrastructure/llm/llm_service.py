@@ -9,6 +9,7 @@ from src.domain.entities.tool import ToolCall
 from src.domain.entities.system_prompt import PromptType
 from src.infrastructure.llm.openrouter_client import OpenRouterClient
 from src.infrastructure.llm.prompt_service import get_prompt_service, PromptService
+from src.infrastructure.llm.entity_processor import EntityProcessor
 from src.shared.exceptions import LLMServiceError
 from src.shared.logging import LoggerMixin
 
@@ -45,6 +46,7 @@ class LLMService(LoggerMixin):
         self.client = client or OpenRouterClient()
         self.tool_registry = tool_registry
         self.prompt_service = prompt_service or get_prompt_service()
+        self.entity_processor = EntityProcessor()
         self.default_model = self.settings.openrouter.openrouter_llm_model
         # Use faster, cheaper model for extractions
         self.extraction_model = "anthropic/claude-3-haiku"
@@ -59,6 +61,7 @@ class LLMService(LoggerMixin):
         model: str | None = None,
         temperature: float = 0.7,
         max_tokens: int | None = None,
+        response_format: dict[str, str] | None = None,
     ) -> str:
         """
         Generate a chat response.
@@ -68,6 +71,7 @@ class LLMService(LoggerMixin):
             model: Model to use (defaults to configured model)
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
+            response_format: Response format (e.g., {"type": "json_object"} to force JSON)
 
         Returns:
             Generated response text
@@ -88,6 +92,7 @@ class LLMService(LoggerMixin):
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            response_format=response_format,
         )
 
         content = response["choices"][0]["message"]["content"]
@@ -120,6 +125,11 @@ class LLMService(LoggerMixin):
 
         system_prompt = await self.prompt_service.get_prompt(PromptType.MEMORY_EXTRACTION)
 
+        # Add explicit JSON instruction
+        system_prompt = f"""{system_prompt}
+
+IMPORTANT: You MUST respond with ONLY a valid JSON array. Do not include any explanatory text, markdown formatting, or conversational responses. Return ONLY the raw JSON array."""
+
         user_prompt = f"Conversation:\n{conversation_text}"
         if user_profile:
             user_prompt = f"User Profile:\n{user_profile}\n\n{user_prompt}"
@@ -130,7 +140,11 @@ class LLMService(LoggerMixin):
         ]
 
         response = await self.chat(
-            messages, model=self.extraction_model, temperature=0.3, max_tokens=1000
+            messages,
+            model=self.extraction_model,
+            temperature=0.3,
+            max_tokens=1000,
+            response_format={"type": "json_object"},
         )
 
         # Parse JSON response
@@ -308,7 +322,7 @@ class LLMService(LoggerMixin):
         return description
 
     async def extract_entities(
-        self, text: str, context: str | None = None
+        self, text: str, context: str | None = None, min_confidence: float = 0.4
     ) -> list[dict[str, Any]]:
         """
         Extract named entities from text for knowledge graph.
@@ -316,9 +330,10 @@ class LLMService(LoggerMixin):
         Args:
             text: Text to extract entities from
             context: Optional additional context
+            min_confidence: Minimum confidence threshold for entities (default: 0.4)
 
         Returns:
-            List of extracted entities with metadata
+            List of extracted and processed entities with metadata
 
         Raises:
             LLMServiceError: If extraction fails
@@ -327,6 +342,11 @@ class LLMService(LoggerMixin):
 
         # Get entity extraction prompt from database
         system_prompt = await self.prompt_service.get_prompt(PromptType.ENTITY_EXTRACTION)
+
+        # Add explicit JSON instruction
+        system_prompt = f"""{system_prompt}
+
+IMPORTANT: You MUST respond with ONLY a valid JSON array of entities. Do not include any explanatory text, markdown formatting, or conversational responses. Return ONLY the raw JSON array."""
 
         user_prompt = f"Text to analyze:\n{text}"
         if context:
@@ -338,16 +358,32 @@ class LLMService(LoggerMixin):
         ]
 
         response = await self.chat(
-            messages, model=self.extraction_model, temperature=0.2, max_tokens=2000
+            messages,
+            model=self.extraction_model,
+            temperature=0.2,
+            max_tokens=2000,
+            response_format={"type": "json_object"},
         )
 
         # Parse JSON response
         try:
             import json
 
-            entities = json.loads(response.strip())
-            self.logger.info("entities_extracted", count=len(entities))
-            return entities
+            raw_entities = json.loads(response.strip())
+            self.logger.info("raw_entities_extracted", count=len(raw_entities))
+
+            # Process and validate entities
+            processed_entities = self.entity_processor.process_entities(
+                raw_entities, min_confidence=min_confidence
+            )
+
+            self.logger.info(
+                "entities_processed",
+                raw_count=len(raw_entities),
+                final_count=len(processed_entities)
+            )
+
+            return processed_entities
 
         except json.JSONDecodeError as e:
             self.logger.error(
@@ -389,6 +425,11 @@ class LLMService(LoggerMixin):
         # Get relationship extraction prompt from database
         system_prompt = await self.prompt_service.get_prompt(PromptType.RELATIONSHIP_EXTRACTION)
 
+        # Add explicit JSON instruction
+        system_prompt = f"""{system_prompt}
+
+IMPORTANT: You MUST respond with ONLY a valid JSON array of relationships. Do not include any explanatory text, markdown formatting, or conversational responses. Return ONLY the raw JSON array."""
+
         user_prompt = f"""Entities found:
 {', '.join(entity_names)}
 
@@ -401,7 +442,11 @@ Text to analyze:
         ]
 
         response = await self.chat(
-            messages, model=self.extraction_model, temperature=0.2, max_tokens=2000
+            messages,
+            model=self.extraction_model,
+            temperature=0.2,
+            max_tokens=2000,
+            response_format={"type": "json_object"},
         )
 
         # Parse JSON response

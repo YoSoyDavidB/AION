@@ -20,6 +20,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { LoadingSpinner } from "@/components/ui/spinner";
+import { SkeletonCard } from "@/components/ui/skeleton";
+import { EmptyState } from "@/components/ui/empty-state";
 import { entitiesApi } from "@/lib/api/entities";
 import type { Entity, EntityGraph } from "@/lib/types/entity";
 import { EntityType } from "@/lib/types/entity";
@@ -35,6 +38,8 @@ import {
   AlertCircle,
   Network,
   ArrowRight,
+  Filter,
+  X,
 } from "lucide-react";
 
 const entityTypeIcons: Record<EntityType, React.ComponentType<{ className?: string }>> = {
@@ -227,11 +232,35 @@ export function KnowledgeGraph() {
             </Select>
           </div>
 
+          {/* Results Count */}
+          {!isLoading && (
+            <div className="flex items-center justify-between text-sm text-muted-foreground">
+              <span>
+                Showing {filteredEntities.length} of {allEntities.length} entities
+              </span>
+              {(searchQuery || selectedType !== "all") && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSearchQuery("");
+                    setSelectedType("all");
+                  }}
+                >
+                  <X className="h-4 w-4 mr-2" />
+                  Clear filters
+                </Button>
+              )}
+            </div>
+          )}
+
           {/* Entities List */}
           <ScrollArea className="h-[500px]">
             {isLoading ? (
-              <div className="flex items-center justify-center h-40">
-                <p className="text-muted-foreground">Loading entities...</p>
+              <div className="space-y-4">
+                {[1, 2, 3, 4].map((i) => (
+                  <SkeletonCard key={i} />
+                ))}
               </div>
             ) : filteredEntities.length > 0 ? (
               <div className="space-y-2">
@@ -272,13 +301,26 @@ export function KnowledgeGraph() {
                 })}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center h-40 text-center">
-                <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
-                <p className="text-muted-foreground">No entities found</p>
-                <p className="text-sm text-muted-foreground">
-                  Try adjusting your search or filter
-                </p>
-              </div>
+              <EmptyState
+                icon={searchQuery || selectedType !== "all" ? Search : Network}
+                title={searchQuery || selectedType !== "all" ? "No entities found" : "No entities yet"}
+                description={
+                  searchQuery || selectedType !== "all"
+                    ? "Try adjusting your search or filter criteria"
+                    : "Entities will appear here as conversations are processed"
+                }
+                action={
+                  searchQuery || selectedType !== "all"
+                    ? {
+                        label: "Clear filters",
+                        onClick: () => {
+                          setSearchQuery("");
+                          setSelectedType("all");
+                        },
+                      }
+                    : undefined
+                }
+              />
             )}
           </ScrollArea>
         </CardContent>

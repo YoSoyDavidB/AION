@@ -151,6 +151,7 @@ class OpenRouterClient(LoggerMixin):
         stream: bool = False,
         tools: list[dict[str, Any]] | None = None,
         tool_choice: str | dict[str, Any] = "auto",
+        response_format: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """
         Generate a chat completion using OpenRouter.
@@ -167,6 +168,7 @@ class OpenRouterClient(LoggerMixin):
             stream: Whether to stream the response
             tools: List of tool definitions for function calling
             tool_choice: Tool choice strategy ("auto", "none", or specific tool)
+            response_format: Response format (e.g., {"type": "json_object"} to force JSON)
 
         Returns:
             Completion response
@@ -198,6 +200,11 @@ class OpenRouterClient(LoggerMixin):
 
         if stop is not None:
             data["stop"] = stop
+
+        # Add response format if specified (e.g., for JSON mode)
+        if response_format is not None:
+            data["response_format"] = response_format
+            self.logger.info("response_format_set", format_type=response_format.get("type"))
 
         # Add tool calling parameters if tools are provided
         if tools is not None and len(tools) > 0:

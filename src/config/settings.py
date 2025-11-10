@@ -309,6 +309,40 @@ class MicrosoftOAuthSettings(BaseSettings):
     )
 
 
+class MCPSettings(BaseSettings):
+    """MCP (Model Context Protocol) server settings for N8N integrations."""
+
+    # Gmail MCP Server
+    n8n_mcp_gmail_base_url: str | None = Field(
+        default=None, description="N8N MCP Gmail server base URL"
+    )
+    n8n_mcp_header_name: str = Field(
+        default="X-API-Key", description="Header name for MCP authentication"
+    )
+    n8n_mcp_header_value: str | None = Field(
+        default=None, description="Header value for MCP authentication"
+    )
+
+    # Future MCP servers (calendar, etc.)
+    n8n_mcp_calendar_base_url: str | None = Field(
+        default=None, description="N8N MCP Calendar server base URL"
+    )
+
+    @property
+    def is_gmail_configured(self) -> bool:
+        """Check if Gmail MCP is properly configured."""
+        return bool(self.n8n_mcp_gmail_base_url and self.n8n_mcp_header_value)
+
+    @property
+    def is_calendar_configured(self) -> bool:
+        """Check if Calendar MCP is properly configured."""
+        return bool(self.n8n_mcp_calendar_base_url and self.n8n_mcp_header_value)
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
+    )
+
+
 class Settings:
     """
     Main settings aggregator.
@@ -329,6 +363,7 @@ class Settings:
         self.rate_limit = RateLimitSettings()
         self.google_oauth = GoogleOAuthSettings()
         self.microsoft_oauth = MicrosoftOAuthSettings()
+        self.mcp = MCPSettings()
 
     @property
     def is_development(self) -> bool:
