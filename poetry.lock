@@ -167,6 +167,24 @@ yarl = ">=1.17.0,<2.0"
 speedups = ["Brotli ; platform_python_implementation == \"CPython\"", "aiodns (>=3.3.0)", "backports.zstd ; platform_python_implementation == \"CPython\" and python_version < \"3.14\"", "brotlicffi ; platform_python_implementation != \"CPython\""]
 
 [[package]]
+name = "aiohttp-sse-client"
+version = "0.2.1"
+description = "A Server-Sent Event python client base on aiohttp"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "aiohttp-sse-client-0.2.1.tar.gz", hash = "sha256:5004e29271624af586158dc7166cb0687a7a5997aab5b808f4b53400e1b72e3b"},
+    {file = "aiohttp_sse_client-0.2.1-py2.py3-none-any.whl", hash = "sha256:42c81ee9213e9fc8bc412b063bac3a813e02e75250c4c8049222234d41c9b024"},
+]
+
+[package.dependencies]
+aiohttp = ">=3"
+attrs = "*"
+multidict = "*"
+yarl = "*"
+
+[[package]]
 name = "aiosignal"
 version = "1.4.0"
 description = "aiosignal: a list of registered asynchronous callbacks"
@@ -5631,4 +5649,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.11"
-content-hash = "7886e100a66655c1bd0af743eafbddf2ec3ff5c69873951923cfdcd2b1819da5"
+content-hash = "e3d3315b3943fda3ea1a90cb6c1ffbb0dbcad1ddb61746348cfdb8bfc5dce4bc"

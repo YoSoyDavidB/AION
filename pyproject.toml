@@ -45,6 +45,8 @@ msgraph-sdk = "^1.14.0"
 beautifulsoup4 = "^4.14.2"
 lxml = "^6.0.2"
 mcp = "^1.1.2"
+httpx-sse = "^0.4.3"
+aiohttp-sse-client = "^0.2.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"

@@ -6,7 +6,7 @@ from typing import Any
 
 from src.config.settings import get_settings
 from src.domain.entities.tool import BaseTool, ToolParameter
-from src.infrastructure.mcp import MCPSseClient
+from src.infrastructure.mcp import MCPN8NClient
 from src.shared.logging import LoggerMixin
 
 
@@ -18,12 +18,12 @@ class GmailMCPTool(BaseTool, LoggerMixin):
     eliminating the need for OAuth handling in AION.
     """
 
-    def __init__(self, mcp_client: MCPSseClient | None = None):
+    def __init__(self, mcp_client: MCPN8NClient | None = None):
         """
         Initialize Gmail MCP tool.
 
         Args:
-            mcp_client: MCP SSE client instance (optional, will create if not provided)
+            mcp_client: MCP N8N client instance (optional, will create if not provided)
         """
         self.settings = get_settings()
 
@@ -37,8 +37,11 @@ class GmailMCPTool(BaseTool, LoggerMixin):
                     "N8N_MCP_HEADER_VALUE environment variables."
                 )
 
-            self.mcp_client = MCPSseClient(
-                url=self.settings.mcp.n8n_mcp_gmail_base_url,
+            # Remove /sse suffix if present for N8N client
+            base_url = self.settings.mcp.n8n_mcp_gmail_base_url.replace("/sse", "")
+
+            self.mcp_client = MCPN8NClient(
+                base_url=base_url,
                 auth_header_name=self.settings.mcp.n8n_mcp_header_name,
                 auth_header_value=self.settings.mcp.n8n_mcp_header_value,
             )
@@ -135,10 +138,20 @@ Returns a list of recent Gmail messages with subjects, senders, snippets, and re
                 arguments["query"] = query
 
             # Connect to MCP server and call tool
+            # N8N MCP uses 'search' tool for getting emails
             async with self.mcp_client as client:
+                # Map parameters to N8N search tool format
+                search_args = {
+                    "Return_All": False,
+                    "Search": "is:unread" if only_unread else "",
+                    "Received_After": "",
+                    "Received_Before": "",
+                    "Sender": query if query else "",
+                }
+
                 result = await client.call_tool(
-                    tool_name="get_emails",
-                    arguments=arguments,
+                    tool_name="search",
+                    arguments=search_args,
                 )
 
             # Process MCP response
